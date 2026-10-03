@@ -259,7 +259,7 @@ Une requête JSON par ligne, une réponse JSON par ligne :
 ← {"id": 2, "error": "cannot read memory"}
 ```
 
-Méthodes : `ping`, `cmd`, `eval`, `state`, `wait`, `run`, `pause`, `step_into`, `step_over`, `step_out`, `regs`, `reg_get`, `reg_set`, `mem_read`, `mem_write`, `mem_valid`, `disasm` (paramètres dans [`pybridge/src/api.cpp`](pybridge/src/api.cpp)).
+Méthodes : `ping`, `cmd`, `eval`, `state`, `wait`, `run`, `pause`, `step_into`, `step_over`, `step_out`, `stop`, `regs`, `reg_get`, `reg_set`, `mem_read`, `mem_write`, `mem_valid`, `disasm` (paramètres dans [`pybridge/src/api.cpp`](pybridge/src/api.cpp)).
 
 ### Sécurité et limites
 

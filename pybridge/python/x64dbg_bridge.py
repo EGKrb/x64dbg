@@ -70,6 +70,18 @@ def _value(value: int | str) -> str | int:
     return value
 
 
+def _terminate(process: subprocess.Popen, grace: float = 0.0) -> None:
+    """Wait up to grace seconds for the process to exit, then kill it and wait until it is really gone
+    (so that its port is free for the next session)."""
+    try:
+        process.wait(timeout=grace)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    process.kill()
+    process.wait()
+
+
 def _command_value(value: int | str) -> str:
     """Format an address/value as an unquoted command argument."""
     return _value(value) if isinstance(value, int) else str(value)
@@ -83,7 +95,9 @@ class Debugger:
         self._file = self._sock.makefile("rb")
         self._next_id = 1
         self._process: subprocess.Popen | None = None
-        self.arch = self.call("ping")["arch"]
+        info = self.call("ping")
+        self.arch = info["arch"]
+        self.pid: int | None = info.get("pid")  # process id of x64dbg (not of the debuggee)
 
     # ----------------------------------------------------------------- lifetime
 
@@ -121,17 +135,26 @@ class Debugger:
         if log_file:
             output.close()
         deadline = time.monotonic() + startup_timeout
+        other_pid = None
         while True:
             if process.poll() is not None:
                 raise BridgeError(f"{exe.name} exited with code {process.returncode}")
             try:
                 dbg = cls(port=port)
-                break
-            except OSError:
-                if time.monotonic() > deadline:
-                    process.kill()
-                    raise BridgeError(f"cannot connect to pybridge on port {port} (is the plugin installed in {folder / 'plugins'}?)")
-                time.sleep(0.2)
+                # The port can still belong to another (or a closing) x64dbg: only accept our process
+                if dbg.pid in (None, process.pid):
+                    break
+                other_pid = dbg.pid
+                dbg._file.close()
+                dbg._sock.close()
+            except (OSError, BridgeError):
+                pass
+            if time.monotonic() > deadline:
+                _terminate(process)
+                if other_pid is not None:
+                    raise BridgeError(f"port {port} is used by another x64dbg (pid {other_pid}), close it or use another port")
+                raise BridgeError(f"cannot connect to pybridge on port {port} (is the plugin installed in {folder / 'plugins'}?)")
+            time.sleep(0.2)
         dbg._process = process
         return dbg
 
@@ -142,6 +165,7 @@ class Debugger:
             try:
                 if self.state()["debugging"]:
                     self.stop()
+                self.call("quit")  # closes x64dbg (GUI or headless) cleanly
             except (BridgeError, OSError):
                 pass
         try:
@@ -150,16 +174,13 @@ class Debugger:
         except OSError:
             pass
         if process is not None:
-            if process.stdin and process.args and str(process.args[0]).endswith("headless.exe"):
+            if process.stdin:
                 try:
-                    process.stdin.write(b"exit\n")
+                    process.stdin.write(b"exit\n")  # headless.exe also exits on this line
                     process.stdin.close()
                 except OSError:
                     pass
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            _terminate(process, grace=15)
 
     def __enter__(self) -> "Debugger":
         return self
@@ -263,12 +284,10 @@ class Debugger:
     def step_out(self, timeout: float = 30.0) -> bool:
         return self.call("step_out", timeout_ms=int(timeout * 1000))["paused"]
 
-    def stop(self) -> None:
-        """Stop debugging (terminates the debuggee)."""
-        self.cmd("StopDebug", check=False)
-        deadline = time.monotonic() + 10
-        while self.call("state")["debugging"] and time.monotonic() < deadline:
-            time.sleep(0.05)
+    def stop(self, timeout: float = 15.0) -> None:
+        """Stop debugging (terminates the debuggee). Raises BridgeError if it takes longer than timeout."""
+        if not self.call("stop", timeout_ms=int(timeout * 1000))["stopped"]:
+            raise BridgeError(f"debugging did not stop within {timeout:g} s")
 
     # ----------------------------------------------------------------- registers
 

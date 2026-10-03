@@ -225,7 +225,17 @@ namespace
 #else
                     json_object_set_new(result, "arch", json_string("x32"));
 #endif //_WIN64
+                    // Lets a client check that it reached the process it started
+                    json_object_set_new(result, "pid", json_integer(GetCurrentProcessId()));
                     return result;
+                }
+            },
+            {
+                "quit", [](json_t*, const std::atomic<bool> &)
+                {
+                    // Asynchronous: x64dbg (GUI or headless) closes after this response is sent
+                    GuiCloseApplication();
+                    return json_true();
                 }
             },
             {
@@ -271,6 +281,22 @@ namespace
                 "pause", [](json_t* params, const std::atomic<bool> & serverRunning)
                 {
                     return ExecAndWait("pause", params, true, serverRunning);
+                }
+            },
+            {
+                "stop", [](json_t* params, const std::atomic<bool> & serverRunning)
+                {
+                    // Queued like the GUI's stop button: StopDebug waits for the debug loop to finish,
+                    // so running it directly here could block this server thread for a long time.
+                    if(DbgIsDebugging() && !DbgCmdExec("StopDebug"))
+                        Fail("cannot queue StopDebug");
+                    long long timeoutMs = IntParam(params, "timeout_ms", 15000);
+                    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+                    while(serverRunning && DbgIsDebugging() && std::chrono::steady_clock::now() < deadline)
+                        Sleep(10);
+                    json_t* state = State();
+                    json_object_set_new(state, "stopped", json_boolean(!DbgIsDebugging()));
+                    return state;
                 }
             },
             {
