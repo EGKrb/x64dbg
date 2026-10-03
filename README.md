@@ -1,214 +1,419 @@
 # x64dbg — fork EGKrb
 
-> **Fork non officiel** de [x64dbg/x64dbg](https://github.com/x64dbg/x64dbg) (branche `development`). Il ajoute l'export des traces en JSON/CSV et le pilotage d'x64dbg depuis Python. Pour la version officielle, voir le dépôt d'origine ; le README officiel est reproduit plus bas.
+<img width="100" src="src/bug_black.png" alt="x64dbg"/>
 
-## Ce qui est ajouté
+**Fork non officiel de [x64dbg](https://github.com/x64dbg/x64dbg)**, le débogueur open source pour Windows (analyse de malwares, rétro-ingénierie d'exécutables sans code source). Il reprend la branche `development` officielle et ajoute :
 
-| Ajout | Où | Description |
+- **`TraceExport`** : conversion des traces d'exécution en **JSON** ou **CSV** lisibles par n'importe quel outil ;
+- **pybridge** : pilotage complet d'x64dbg **depuis Python** (breakpoints, pas à pas, registres, mémoire, traces) ;
+- des **modèles de scripts** prêts à l'emploi pour **`headless.exe`** (x64dbg sans interface) ;
+- les plugins **ScyllaHide** et **xAnalyzer** inclus dans la release, **OllyDumpEx** installable en une commande.
+
+**[⬇ Télécharger la dernière release](https://github.com/EGKrb/x64dbg/releases/latest)** · [README officiel d'x64dbg](README.x64dbg.md) · [Documentation officielle](https://help.x64dbg.com)
+
+---
+
+## Sommaire
+
+1. [Installation](#installation)
+2. [Différences avec x64dbg officiel](#différences-avec-x64dbg-officiel)
+3. [Comment fonctionne x64dbg](#comment-fonctionne-x64dbg)
+4. [TraceExport : exporter les traces](#traceexport--exporter-les-traces)
+5. [pybridge : piloter x64dbg depuis Python](#pybridge--piloter-x64dbg-depuis-python)
+6. [Modèles pour headless.exe](#modèles-pour-headlessexe)
+7. [Plugins inclus](#plugins-inclus)
+8. [Compiler soi-même](#compiler-soi-même)
+9. [Organisation du dépôt](#organisation-du-dépôt)
+10. [Licences et crédits](#licences-et-crédits)
+
+---
+
+## Installation
+
+1. Téléchargez `x64dbg-egkrb_<version>.zip` depuis la [page des releases](https://github.com/EGKrb/x64dbg/releases/latest).
+2. Extrayez-le dans un dossier **où vous avez le droit d'écrire** (par exemple `C:\Outils\x64dbg`, pas `C:\Program Files`) : x64dbg enregistre sa configuration (`x64dbg.ini`) et ses bases de données (`db\`) à côté des exécutables.
+3. Lancez `release\x96dbg.exe` (lanceur qui choisit la bonne architecture), ou directement `release\x64\x64dbg.exe` pour un programme 64 bits et `release\x32\x32dbg.exe` pour un programme 32 bits.
+4. Facultatif : installez OllyDumpEx (non redistribuable, voir [Plugins inclus](#plugins-inclus)) :
+   ```powershell
+   cd release
+   powershell -ExecutionPolicy Bypass -File .\install-plugins.ps1 -Plugins OllyDumpEx
+   ```
+
+Contenu de l'archive :
+
+```
+release\
+  x96dbg.exe                 lanceur
+  x64\  x32\                 débogueur 64 / 32 bits, headless.exe, plugins\
+  translations\              interface traduite (dont le français : Options > Langue)
+  themes\                    thème sombre
+  pybridge\                  client Python, exemples, modèles headless
+  install-plugins.ps1        installe/met à jour ScyllaHide, xAnalyzer, OllyDumpEx
+  licenses\                  licences d'x64dbg et des plugins
+  LISEZMOI.md                démarrage rapide
+pluginsdk\                   en-têtes et bibliothèques pour écrire des plugins
+commithash.txt               commit exact de la compilation
+```
+
+Un second fichier, `x64dbg-egkrb_<version>_symbols.zip`, contient les symboles de débogage (`.pdb`), utiles seulement pour analyser un plantage d'x64dbg lui-même. `SHA256SUMS.txt` donne les empreintes des deux archives.
+
+---
+
+## Différences avec x64dbg officiel
+
+| | x64dbg officiel | Ce fork |
 |---|---|---|
-| Commande `TraceExport` | [`src/dbg/TraceExport.cpp`](src/dbg/TraceExport.cpp), [doc](docs/commands/tracing/TraceExport.md) | Convertit une trace `.trace64`/`.trace32` en JSON ou CSV : adresse, octets, désassemblage, registres et accès mémoire de chaque instruction. Fonctionne sans session de débogage, donc aussi dans `headless.exe`. |
-| Plugin `pybridge` | [`pybridge/`](pybridge/README.md) | Serveur local (127.0.0.1) dans x64dbg + client Python sans dépendance : breakpoints, exécution pas à pas, registres, mémoire, désassemblage, traces. |
-| Modèles headless | [`pybridge/headless/`](pybridge/headless) | Lanceur PowerShell et scripts prêts à l'emploi : journal d'appels d'API, trace + export, dump mémoire, breakpoint conditionnel avec actions automatiques. |
-| Correctif | [`src/dbg/patternfind.cpp`](src/dbg/patternfind.cpp) | Supprime un `using namespace std` qui cassait la compilation en *unity build* (`std::byte` contre `byte` de Windows). |
+| Code de base | releases publiées (ex. 2026.05.27) | branche `development` récente (fonctionnalités et correctifs pas encore publiés officiellement) |
+| Export des traces | binaire `.trace64` lisible uniquement par x64dbg ; export CSV possible seulement dans l'interface | commande `TraceExport` → JSON ou CSV, aussi en script et dans `headless.exe` |
+| Automatisation | langage de script x64dbg, SDK C/C++ | + client Python (pybridge) + modèles headless avec lanceur |
+| Plugins | aucun | ScyllaHide et xAnalyzer inclus, pybridge inclus, OllyDumpEx via `install-plugins.ps1` |
+| Compilation | — | correctif d'un `using namespace std` qui cassait le *unity build* (`patternfind.cpp`) |
 
-La branche [`feature/trace-export`](https://github.com/EGKrb/x64dbg/tree/feature/trace-export) ne contient que `TraceExport`, séparément du reste.
+Le cœur du débogueur n'est pas modifié : tout ce qui fonctionne dans x64dbg officiel fonctionne ici à l'identique. Une branche [`feature/trace-export`](https://github.com/EGKrb/x64dbg/tree/feature/trace-export) ne contient que `TraceExport`, isolé du reste.
 
-### Exemple
+> Basé sur une version de développement : elle passe la suite de tests automatiques du projet (81 tests en 64 bits), mais peut être moins éprouvée qu'une release officielle.
+
+---
+
+## Comment fonctionne x64dbg
+
+x64dbg est découpé en modules qui communiquent par une couche commune, le *bridge* :
 
 ```
-StartTraceRecording "C:\traces\cible.trace64"
-TraceIntoConditional 0, .10000
+ x64dbg.exe / x32dbg.exe        headless.exe
+   (interface Qt, x64gui.dll)     (sans interface : console + scripts)
+            \                      /
+             x64bridge.dll  ── API commune (DbgCmdExec, DbgMemRead, Gui*...)
+                    |
+              x64dbg.dll  ── le débogueur : commandes, expressions, scripts,
+                    |        breakpoints, traces, base de données, plugins
+                    |
+        TitanEngine / GleeBug ── moteur bas niveau (API de débogage Windows)
+                    |
+             processus débogué
+```
+
+- **Le débogueur (`x64dbg.dll`)** fait tout le travail : il lance ou s'attache au processus, gère les breakpoints (logiciels `INT3`, matériels via les registres de debug, mémoire via les protections de page), évalue les expressions et exécute les commandes.
+- **L'interface** et **`headless.exe`** ne sont que des clients du débogueur. `headless.exe` lit les commandes sur son entrée standard, exécute un script avec `-cf`, et écrit le journal sur sa sortie : c'est ce qui permet l'automatisation.
+- **Tout est une commande** : chaque action de l'interface correspond à une commande texte (`bp`, `run`, `StepInto`, `savedata`...) utilisable dans la barre de commande, dans un script ou par un plugin.
+- **Les expressions** (`rax+8`, `[rsp]`, `kernel32.CreateFileW`, `mod.base(cible.exe)`, `arg.get(0)`) servent partout où une valeur est attendue. **Les nombres y sont en hexadécimal par défaut** ; `.100` signifie 100 en décimal.
+- **Les plugins** (`.dp64`/`.dp32` dans `plugins\`) sont chargés par le débogueur, donc aussi dans `headless.exe`. Ils peuvent ajouter des commandes et appeler toute l'API.
+
+### Les traces
+
+Une **trace** enregistre chaque instruction exécutée pendant un pas à pas automatique :
+
+```
+StartTraceRecording "C:\traces\cible.trace64"   // ouvre le fichier d'enregistrement
+TraceIntoConditional 0, .10000                  // trace jusqu'à ce que la condition soit vraie (0 = jamais), max 10 000 instructions
 StopTraceRecording
-TraceExport "C:\traces\cible.trace64", "C:\traces\cible.json"
-TraceExport "C:\traces\cible.trace64", "C:\traces\cible.csv"
 ```
+
+Pour chaque instruction, x64dbg écrit dans le fichier `.trace64` : le thread, les octets de l'instruction, les **registres modifiés** depuis l'instruction précédente (avec un état complet tous les 512 pas) et les **accès mémoire** (adresse, ancienne et nouvelle valeur). Ce format compact (décrit dans [`docs/developers/tracefile.md`](docs/developers/tracefile.md)) n'est lisible que par x64dbg : c'est ce que `TraceExport` résout.
+
+---
+
+## TraceExport : exporter les traces
+
+```
+TraceExport fichier_trace, fichier_sortie[, format]
+```
+
+| Argument | Description |
+|---|---|
+| `fichier_trace` | trace à lire : `.trace64` avec x64dbg, `.trace32` avec x32dbg |
+| `fichier_sortie` | fichier créé (écrasé s'il existe) |
+| `format` | `json` ou `csv`. Sans ce 3e argument : `csv` si le nom se termine par `.csv`, sinon `json` |
+
+Après la commande, **`$result`** contient le nombre d'instructions exportées. La commande **n'a pas besoin d'un processus en cours de débogage** : elle fonctionne aussi pour convertir des traces anciennes, et dans `headless.exe`.
+
+### Format JSON
+
+```json
+{
+"version": 1,
+"arch": "x64",
+"path": "C:\\cible.exe",
+"hash": "0x5DD5453A5460CC36",
+"instructions": [
+{"index": 1, "thread": 21712, "address": "0x7FF757A81290", "module": "cible.exe", "bytes": "E8 4B 02 00 00",
+ "disasm": "call 0x00007FF757A814E0",
+ "regs": {"rax": "0x7FF757A8128C", "rcx": "0x6254684000", "...": "...", "rip": "0x7FF757A81290", "rflags": "0x202"},
+ "mem": [{"address": "0x625451F978", "old": "0x0", "new": "0x7FF757A81295"}]}
+]
+}
+```
+
+| Champ | Contenu |
+|---|---|
+| `index` | numéro de l'instruction dans la trace (0, 1, 2...) |
+| `thread` | identifiant du thread (décimal) |
+| `address` | adresse de l'instruction |
+| `module` | module contenant l'adresse ; présent seulement si la trace appartient au processus en cours de débogage |
+| `bytes`, `disasm` | octets et désassemblage (Zydis) |
+| `regs` | registres généraux, pointeur d'instruction et drapeaux **avant** l'exécution de l'instruction (`rax`…`r15`, `rip`, `rflags` en 64 bits ; `eax`…`edi`, `eip`, `eflags` en 32 bits) |
+| `mem` | accès mémoire de l'instruction : adresse, valeur avant, valeur après (par blocs de la taille d'un pointeur) |
+
+Les adresses et valeurs sont des **chaînes hexadécimales** : un entier 64 bits ne tient pas dans un nombre JSON standard. En Python : `int(valeur, 16)`. Une instruction est écrite par ligne, ce qui permet aussi `grep` sur le fichier.
+
+### Format CSV
+
+Une ligne par instruction, colonnes `index,thread,address,module,bytes,disasm,<registres>,memory`. La colonne `memory` liste les accès séparés par `;` : `adresse:valeur` si la mémoire n'a pas changé (lecture), `adresse:avant->après` si elle a été modifiée. Le fichier s'ouvre directement dans Excel ou avec `pandas.read_csv`.
+
+### Fonctionnement interne
+
+[`src/dbg/TraceExport.cpp`](src/dbg/TraceExport.cpp) lit le fichier en continu (mémoire constante, quelle que soit la taille de la trace) :
+
+1. vérifie l'en-tête `TRAC` et son JSON (version 1, architecture identique à celle du débogueur) ;
+2. pour chaque bloc d'instruction, applique les registres modifiés à l'état courant (les registres sont encodés par différence), lit les accès mémoire, puis désassemble les octets ;
+3. ignore les blocs utilisateur (type ≥ 0x80) prévus par le format ;
+4. écrit le JSON ou le CSV au fil de l'eau.
+
+Sécurités : un fichier de sortie identique au fichier d'entrée est refusé (il serait écrasé) ; une trace **en cours d'enregistrement** peut être exportée, son dernier bloc incomplet est ignoré avec un avertissement ; un fichier corrompu donne un message précis indiquant après combien d'instructions.
+
+Limites : seuls les registres généraux, le pointeur d'instruction et les drapeaux sont exportés (pas les registres SSE/AVX/x87, pourtant présents dans la trace) ; une trace 32 bits doit être exportée avec x32dbg et inversement.
+
+Documentation de la commande : [`docs/commands/tracing/TraceExport.md`](docs/commands/tracing/TraceExport.md). Test automatique : [`src/tests/trace_export/`](src/tests/trace_export).
+
+---
+
+## pybridge : piloter x64dbg depuis Python
+
+```
+ script Python                         x64dbg / headless.exe
+ x64dbg_bridge.py   ── TCP 127.0.0.1:27041 ──►  plugin pybridge.dp64
+ (bibliothèque          une requête JSON          (thread serveur)
+  standard seule)       par ligne                      │
+                    ◄── une réponse JSON ──    API x64dbg : commandes,
+                                               expressions, mémoire...
+```
+
+Le plugin ouvre un serveur **uniquement sur l'interface locale** (127.0.0.1) et traduit chaque requête en appel à l'API d'x64dbg. Le client Python n'a **aucune dépendance**.
+
+### Démarrage
+
+- `Debugger.launch(dossier_x64dbg)` démarre `headless.exe` (ou `x64dbg.exe` avec `gui=True`) avec la variable `X64DBG_PYBRIDGE_PORT`, ce qui démarre automatiquement le serveur, puis s'y connecte. À la fin du bloc `with`, le débogage est arrêté et `headless.exe` fermé.
+- Dans un x64dbg déjà ouvert : commande `pybridge.start` (port décimal facultatif, 27041 par défaut), puis `Debugger()` en Python. Aussi : `pybridge.stop`, `pybridge.status`.
 
 ```python
+import sys
+sys.path.insert(0, r"C:\Outils\x64dbg\release\pybridge\python")
 from x64dbg_bridge import Debugger
 
-with Debugger.launch(r"C:\chemin\vers\x64dbg\bin") as dbg:
-    dbg.init(r"C:\Windows\System32\whoami.exe")
-    dbg.set_breakpoint("kernelbase.CreateFileW", break_=False, log="CreateFileW({utf16@arg.get(0)})")
-    dbg.run()
+with Debugger.launch(r"C:\Outils\x64dbg\release") as dbg:
+    dbg.init(r"C:\Windows\System32\whoami.exe")           # démarre et attend la 1re pause
+
+    # Breakpoint qui journalise sans s'arrêter
+    dbg.set_breakpoint("kernelbase.CreateFileW", break_=False,
+                       log="CreateFileW({utf16@arg.get(0)})")
+
+    # Breakpoint qui s'arrête
+    dbg.set_breakpoint("kernelbase.LoadLibraryExW")
+    if dbg.run(wait=True, timeout=10):
+        print("DLL :", dbg.read_string(dbg.eval("arg.get(0)"), wide=True))
+        print(dbg.regs())
+        for ins in dbg.disasm("cip", 5):
+            print(hex(ins["address"]), ins["text"])
 ```
 
-### Compiler
+### API Python
+
+| Catégorie | Méthode | Description |
+|---|---|---|
+| Session | `Debugger.launch(dir, arch="x64", gui=False, port, log_file)` | démarre x64dbg et se connecte |
+| | `init(path, arguments, cwd)` / `attach(pid)` | lance / s'attache, attend la première pause |
+| | `stop()`, `close()` | arrête le débogage / ferme la session |
+| Exécution | `run(wait=False, timeout=10, pass_exceptions=False)` | reprend ; avec `wait=True`, renvoie `True` si le programme s'est de nouveau arrêté |
+| | `pause()`, `step_into()`, `step_over()`, `step_out()` | renvoient `True` une fois en pause |
+| | `wait(timeout)`, `state()` | attente de pause ; état `{debugging, running, cip}` |
+| Registres | `regs()`, `reg(nom)`, `set_reg(nom, valeur)` | registres généraux, IP, drapeaux |
+| Mémoire | `read(adr, taille)`, `write(adr, octets)`, `read_ptr(adr)`, `read_string(adr, wide)`, `is_valid(adr)` | lecture/écriture (jusqu'à 64 Mo par appel) |
+| | `disasm(adr, n)` | `n` instructions : adresse, taille, texte, octets |
+| Breakpoints | `set_breakpoint(adr, condition, log, command, break_, singleshot)` | logiciel, avec condition, texte de log et commande automatiques |
+| | `set_hardware_breakpoint(adr, kind="x"/"w"/"r", size)`, `delete_breakpoint(adr)` | matériel ; suppression (tous si `adr` absent) |
+| Traces | `trace(fichier, condition, max_steps, step_over)` | trace (et enregistre) jusqu'à la condition |
+| | `export_trace(trace, sortie, fmt)` | `TraceExport` ; renvoie le nombre d'instructions |
+| Commandes | `cmd("texte")`, `command(nom, *args)`, `eval(expr)`, `result` | toute commande x64dbg ; `command()` échappe les arguments texte |
+
+Les adresses et valeurs acceptent un **entier** ou une **expression x64dbg** (chaîne) ; les résultats sont des entiers Python. Les erreurs (mémoire illisible, expression invalide, commande refusée) lèvent `BridgeError` avec le message d'x64dbg.
+
+### Exemples fournis ([`pybridge/examples/`](pybridge/examples))
+
+| Script | Ce qu'il fait |
+|---|---|
+| `api_monitor.py cible.exe` | journalise les appels à CreateFileW, CreateProcessW, LoadLibraryExW, VirtualAlloc, VirtualProtect, WriteProcessMemory... avec leurs arguments, sans arrêter le programme |
+| `trace_to_json.py cible.exe --steps 20000 --out dossier` | trace depuis le point d'entrée, exporte en JSON/CSV, affiche les instructions les plus exécutées et le nombre d'écritures mémoire |
+| `dump_memory.py --target cible.exe --addr "mod.base(cible.exe)" --size "mod.size(cible.exe)" --out m.bin` | sauvegarde une zone mémoire (ou `--pid` pour un processus existant, `--at` pour attendre une adresse) |
+| `step_log.py cible.exe --count 50` | pas à pas en affichant les registres modifiés par chaque instruction |
+
+Les exemples utilisent l'x64dbg indiqué par `--x64dbg` ou la variable d'environnement `X64DBG_DIR`.
+
+### Protocole (pour d'autres langages)
+
+Une requête JSON par ligne, une réponse JSON par ligne :
+
+```
+→ {"id": 1, "method": "mem_read", "params": {"addr": "rsp", "size": 16}}
+← {"id": 1, "result": "00000000000000009512A857F77F0000"}
+→ {"id": 2, "method": "mem_read", "params": {"addr": 0, "size": 4}}
+← {"id": 2, "error": "cannot read memory"}
+```
+
+Méthodes : `ping`, `cmd`, `eval`, `state`, `wait`, `run`, `pause`, `step_into`, `step_over`, `step_out`, `regs`, `reg_get`, `reg_set`, `mem_read`, `mem_write`, `mem_valid`, `disasm` (paramètres dans [`pybridge/src/api.cpp`](pybridge/src/api.cpp)).
+
+### Sécurité et limites
+
+- **Tout programme local qui se connecte au port contrôle le débogueur** (lecture/écriture de la mémoire du processus débogué, exécution de commandes). Le serveur n'écoute que sur 127.0.0.1 et ne démarre que sur demande ; ne le laissez pas actif inutilement.
+- Un seul client à la fois ; les requêtes sont traitées dans l'ordre.
+- `run()` ne bloque pas par défaut : utilisez `wait=True` ou `wait()` avec un délai, puis `pause()` si besoin.
+
+---
+
+## Modèles pour headless.exe
+
+[`pybridge/headless/run-headless.ps1`](pybridge/headless/run-headless.ps1) exécute un script x64dbg sans interface :
+
+```powershell
+.\pybridge\headless\run-headless.ps1 -Template api-log -Target C:\Windows\System32\whoami.exe
+.\pybridge\headless\run-headless.ps1 -Template trace-export -Target .\programme.exe -Arch x32
+```
+
+Fonctionnement du lanceur :
+
+1. remplace dans le modèle `%TARGET%` (chemin complet de la cible), `%MODULE%` (nom du fichier), `%OUT%` (dossier de sortie) et `%BITS%` (64 ou 32) ;
+2. crée `out\<modèle>-<date>\` avec le script final (`script.txt`) et un **dossier de configuration isolé** : les `settingset` du modèle ne modifient pas votre configuration ;
+3. lance `headless.exe -userdir ... -cf script.txt`, affiche et enregistre le journal (`headless.log`) ;
+4. ferme `headless.exe` quand le script affiche `[template] done`, quand le programme débogué s'est terminé, ou après `-TimeoutSeconds` (300 par défaut).
+
+| Modèle | Ce qu'il fait | Fichiers produits |
+|---|---|---|
+| `api-log` | journalise les appels d'API et leurs arguments sans jamais arrêter le programme | `headless.log` (lignes `[api]`) |
+| `trace-export` | trace 50 000 instructions depuis le point d'entrée et les exporte | `trace.trace64`, `trace.json`, `trace.csv` |
+| `dump-module` | sauvegarde le module principal et un minidump complet au point d'entrée | `<module>.mem`, `process.dmp` |
+| `break-on-file` | s'arrête seulement quand le programme ouvre un fichier `.txt`, puis journalise l'appel, sauvegarde la pile et écrit un minidump ; se termine proprement si aucun fichier ne correspond | `stack.bin`, `at_createfile.dmp` |
+
+Les modèles lisent les arguments avec `arg.get(n)` et fonctionnent donc en 64 et 32 bits. Les breakpoints sont posés dans `kernelbase.dll`, où se trouve le vrai code des API (les programmes récents l'appellent directement ; `kernel32` ne fait que rediriger).
+
+### Écrire son propre modèle
+
+Un modèle est un script x64dbg ordinaire :
+
+```
+// commentaire (ou ;)
+settingset Events, EntryBreakpoint, 1             // s'arrêter au point d'entrée
+init "%TARGET%"                                    // lancer la cible, le script attend la pause
+bp kernelbase.VirtualProtect
+bpcond kernelbase.VirtualProtect, "arg.get(2) == 40"   // ne s'arrêter que si PAGE_EXECUTE_READWRITE
+erun                                               // continuer ; le script reprend à la prochaine pause
+cmp $pid, 0                                        // $pid = 0 : le programme s'est terminé
+je fin
+savedata "%OUT%\zone.bin", arg.get(0), arg.get(1)
+fin:
+log "[template] done"
+```
+
+Format des textes de log : `{x:rax}` hexadécimal, `{d:...}` décimal, `{p:...}` pointeur, `{a:addr}` adresse avec symbole, `{utf16@addr}` / `{utf8@addr}` chaîne, `{i:addr}` instruction. Voir la [documentation des commandes](https://help.x64dbg.com/en/latest/commands/).
+
+---
+
+## Plugins inclus
+
+| Plugin | Version | Rôle | Utilisation |
+|---|---|---|---|
+| **ScyllaHide** | v1.4 | cache le débogueur aux techniques anti-debug (PEB, `NtQueryInformationProcess`, timings, exceptions...) en injectant des hooks dans le processus | menu *Plugins > ScyllaHide > Options*. Profil actif par défaut : « VMProtect x86/x64 » ; passez à « Basic » si un programme non protégé se comporte mal |
+| **xAnalyzer** | 2.5.12 | analyse statique : reconnaît les appels d'API et commente leurs arguments dans le désassemblage, détecte boucles et fonctions | menu *Plugins > xAnalyzer* ou clic droit dans le désassemblage, ou commandes `xanal selection` / `xanal function` / `xanal module` (`xanalremove ...` pour effacer) ; définitions d'API dans `plugins\apis_def\` |
+| **OllyDumpEx** | v1.86 | dump d'un processus en fichier PE exécutable (pour les programmes compressés/protégés), en complément de Scylla intégré | menu *Plugins > OllyDumpEx* |
+| **pybridge** | 1 | pilotage depuis Python | voir [pybridge](#pybridge--piloter-x64dbg-depuis-python) |
+
+OllyDumpEx est un logiciel gratuit à code fermé **sans licence de redistribution** : il n'est donc pas inclus dans la release. [`install-plugins.ps1`](plugins/install-plugins.ps1) le télécharge depuis le site de son auteur.
+
+```powershell
+.\install-plugins.ps1                              # les trois plugins (ignore ceux déjà installés)
+.\install-plugins.ps1 -Plugins OllyDumpEx          # un seul
+.\install-plugins.ps1 -X64dbgDir C:\x64dbg\release -Force   # autre dossier, réinstallation
+```
+
+Chaque fichier téléchargé est vérifié par son **empreinte SHA-256** (liste dans [`plugins/THIRD-PARTY.md`](plugins/THIRD-PARTY.md)) : si un fichier a changé chez son auteur, l'installation s'arrête au lieu d'installer un fichier inconnu. Le script utilise `curl.exe -4` (IPv4), plus fiable que `Invoke-WebRequest` sur les réseaux où IPv6 est défaillant.
+
+> Si vous installez xAnalyzer à la main : les définitions d'API doivent être dans `plugins\apis_def\`, sinon le plugin refuse de se charger (*« Failed to locate API definitions files »*).
+
+---
+
+## Compiler soi-même
+
+Prérequis : Windows 10/11, **Visual Studio 2022** (charge de travail C++), **CMake** ≥ 3.15, **Ninja**, **git**, Python 3 (pour les tests).
 
 ```bat
 git clone --recursive https://github.com/EGKrb/x64dbg
 cd x64dbg
-"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-cmake -B build64 -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+:: 64 bits, dans un terminal « x64 Native Tools » (ou après vcvars64.bat)
+cmake -B build64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_UNITY_BUILD=ON -DCMAKE_UNITY_BUILD_BATCH_SIZE=6
 cmake --build build64
+
+:: 32 bits, dans un terminal « x86 Native Tools » (ou après vcvars32.bat)
+cmake -B build32 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_UNITY_BUILD=ON -DCMAKE_UNITY_BUILD_BATCH_SIZE=6
+cmake --build build32
 ```
 
-Les exécutables sont dans `bin\x64` (`vcvars32.bat` et un autre dossier de build pour `bin\x32`). Le plugin se compile à part, voir [`pybridge/README.md`](pybridge/README.md). Tests : `py src/tests/run.py --arch x64` (dont `trace_export`).
+Les exécutables sont produits dans `bin\x64` et `bin\x32` (Qt et les dépendances sont copiés automatiquement).
+
+```bat
+:: Plugin pybridge (même terminal que l'architecture voulue)
+cd pybridge
+cmake -B build-x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DX64DBG_SDK=<dossier pluginsdk>
+cmake --build build-x64
+```
+
+Par défaut, pybridge utilise le `pluginsdk` d'un x64dbg installé avec winget ; sinon, indiquez celui d'une release (`-DX64DBG_SDK=...\pluginsdk`).
+
+```powershell
+.\plugins\install-plugins.ps1                       # plugins tiers dans bin\x32 et bin\x64
+py src\tests\run.py --arch x64                       # suite de tests (dont trace_export)
+.\tools\make-release.ps1 -Version 2026.10.03         # archives de release dans dist\
+```
+
+### Mettre à jour depuis x64dbg officiel
+
+```bat
+git remote add upstream https://github.com/x64dbg/x64dbg
+git fetch upstream
+git merge upstream/development
+git submodule update --init --recursive
+```
 
 ---
 
-# x64dbg
+## Organisation du dépôt
 
-<img width="100" src="https://github.com/x64dbg/x64dbg/raw/development/src/bug_black.png"/>
+Fichiers propres à ce fork (le reste est identique à x64dbg officiel) :
 
-[![Crowdin](https://d322cqt584bo4o.cloudfront.net/x64dbg/localized.svg)](https://translate.x64dbg.com) [![Download x64dbg](https://img.shields.io/sourceforge/dm/x64dbg.svg)](https://sourceforge.net/projects/x64dbg/files/latest/download) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/x64dbg/x64dbg)
+```
+src/dbg/TraceExport.cpp, .h          commande TraceExport
+src/dbg/commands/cmd-tracing.cpp     déclaration de la commande
+src/tests/trace_export/              test automatique
+docs/commands/tracing/TraceExport.md documentation de la commande
+pybridge/
+  src/                               plugin (serveur, API)
+  python/x64dbg_bridge.py            client Python
+  examples/                          exemples Python
+  headless/                          lanceur et modèles headless
+plugins/
+  install-plugins.ps1                installeur des plugins tiers
+  THIRD-PARTY.md                     versions, licences, empreintes
+tools/
+  make-release.ps1                   construction des archives de release
+  LISEZMOI.md                        démarrage rapide inclus dans l'archive
+README.x64dbg.md                     README officiel d'x64dbg
+```
 
-[![Discord](https://img.shields.io/badge/chat-on%20Discord-green.svg)](https://discord.x64dbg.com) [![Slack](https://img.shields.io/badge/chat-on%20Slack-red.svg)](https://slack.x64dbg.com) [![Gitter](https://img.shields.io/badge/chat-on%20Gitter-lightseagreen.svg)](https://gitter.im/x64dbg/x64dbg) [![Matrix](https://img.shields.io/badge/chat-on%20Matrix-yellowgreen.svg)](https://matrix.to/#/#x64dbg:matrix.org) [![IRC](https://img.shields.io/badge/chat-on%20IRC-purple.svg)](https://web.libera.chat/#x64dbg)
+---
 
-An open-source binary debugger for Windows, aimed at malware analysis and reverse engineering of executables you do not have the source code for. There are many features available and a comprehensive [plugin system](https://plugins.x64dbg.com) to add your own. You can find more information on the [blog](https://x64dbg.com/blog)!
+## Licences et crédits
 
-## Screenshots
+- **x64dbg** et ce fork : [GPL-3.0](LICENSE). Code source de chaque release : le commit indiqué dans `commithash.txt`.
+- **ScyllaHide** : GPL-3.0 — <https://github.com/x64dbg/ScyllaHide> (source de la v1.4 : tag `v1.4`).
+- **xAnalyzer** : MIT — <https://github.com/ThunderCls/xAnalyzer>, par ThunderCls.
+- **OllyDumpEx** : freeware de Low Priority — <https://low-priority.appspot.com/ollydumpex/>, non redistribué.
 
-![main interface (light)](.github/screenshots/cpu-light.png)
-
-![main interface (dark)](.github/screenshots/cpu-dark.png)
-
-| ![graph](.github/screenshots/graph-light.png) | ![memory map](.github/screenshots/memory-map-light.png) |
-| :--: | :--: |
-
-## Installation & Usage
-
-1. Download a snapshot from [GitHub](https://github.com/x64dbg/x64dbg/releases) or [SourceForge](https://sourceforge.net/projects/x64dbg/files/snapshots) and extract it in a location your user has write access to.
-2. _Optionally_ use `x96dbg.exe` to register a shell extension and add shortcuts to your desktop.
-3. You can now run `x32\x32dbg.exe` if you want to debug a 32-bit executable or `x64\x64dbg.exe` to debug a 64-bit executable! If you are unsure you can always run `x96dbg.exe` and choose your architecture there.
-
-You can also [compile](https://github.com/x64dbg/x64dbg/wiki/Compiling-the-whole-project) x64dbg yourself with a few easy steps!
-
-## Sponsors
-
-<div align="center" markdown="1">
-
-  <a href="https://sponsors.x64dbg.com/warp" target="_blank">
-    <img alt="Warp sponsorship" width="400" src="https://raw.githubusercontent.com/warpdotdev/brand-assets/main/Github/Sponsor/Warp-Github-LG-02.png">
-  </a>
-
-  [**Warp, built for coding with multiple AI agents**](https://sponsors.x64dbg.com/warp)
-
-<br>
-
-[![](.github/sponsors/telekom.svg)](https://sponsors.x64dbg.com/telekom)
-
-</div>
-
-## Contributing
-
-This is a community effort and we accept pull requests! See the [CONTRIBUTING](.github/CONTRIBUTING.md) document for more information. If you have any questions you can always [contact us](https://x64dbg.com/#contact) or open an [issue](https://github.com/x64dbg/x64dbg/issues). You can take a look at the [good first issues](https://easy.x64dbg.com/) to get started.
-
-## Credits
-
-- Debugger core by [TitanEngine Community Edition](https://github.com/x64dbg/TitanEngine)
-- Disassembly powered by [Zydis](https://zydis.re)
-- Assembly powered by [XEDParse](https://github.com/x64dbg/XEDParse) and [asmjit](https://github.com/asmjit)
-- Import reconstruction powered by [Scylla](https://github.com/NtQuery/Scylla)
-- JSON powered by [Jansson](https://www.digip.org/jansson)
-- Database compression powered by [lz4](https://bitbucket.org/mrexodia/lz4)
-- Bug icon by [VisualPharm](https://www.visualpharm.com)
-- Interface icons by [Fugue](https://p.yusukekamiyamane.com)
-- Website by [tr4ceflow](https://tr4ceflow.com)
-
-## Developers
-
-- [mrexodia](https://mrexodia.github.io)
-- Sigma
-- [tr4ceflow](https://blog.tr4ceflow.com)
-- [Dreg](https://www.fr33project.org)
-- [Nukem](https://github.com/Nukem9)
-- [Herz3h](https://github.com/Herz3h)
-- [torusrxxx](https://github.com/torusrxxx)
-
-## Code contributions
-
-You can find an exhaustive list of GitHub contributors [here](https://github.com/x64dbg/x64dbg/graphs/contributors).
-
-## Special Thanks
-
-- Sigma for developing the initial GUI
-- All the donators!
-- Everybody adding issues!
-- People I forgot to add to this list
-- [Writers of the blog](https://x64dbg.com/blog/2016/07/09/Looking-for-writers.html)!
-- [EXETools community](https://forum.exetools.com)
-- [Tuts4You community](https://forum.tuts4you.com)
-- [ReSharper](https://www.jetbrains.com/resharper)
-- [Coverity](https://www.coverity.com)
-- acidflash
-- cyberbob
-- cypher
-- Teddy Rogers
-- TEAM DVT
-- DMichael
-- Artic
-- ahmadmansoor
-- \_pusher\_
-- firelegend
-- [kao](https://lifeinhex.com)
-- sstrato
-- [kobalicek](https://github.com/kobalicek)
-- [athre0z](https://github.com/athre0z)
-- [ZehMatt](https://github.com/ZehMatt)
-- [mrfearless](https://twitter.com/fearless0)
-- [JustMagic](https://github.com/JustasMasiulis)
-
-Without the help of many people and other open-source projects, it would not have been possible to make x64dbg what it is today, thank you!
-
-## Historical Donors
-
-Before fully transitioning to [GitHub Sponsors](https://github.com/sponsors/mrexodia), this project received donations through BountySource. The original donation terms included an optional website link for donors who requested one at the time of donation. Links marked below reflect those requests. BountySource has since been shut down, so these records are reconstructed by hand. If you donated during this period and your username/amount is missing or incorrect, please reach out.
-
-|Username|Amount|Date||Username|Amount|Date|
-|-|-|-|-|-|-|-|
-|sghctoma|$50|2015-04-19||dfrunza|$20|2017-01-30|
-|overflow|$50|2015-04-25||ham3di|$100|2017-02-01|
-|jl2id|$15|2015-04-29||johnny5|$5|2017-02-19|
-|cypherpunk|$50|2015-05-02||David-Reguera-Garcia-Dreg|$90|2017-02-26|
-|Aciid|$50|2015-05-05||[Alexandro Sanchez Bach](https://phi.nz)|-|2017-03-02|
-|PI32|$15|2015-05-09||(unknown)|$6|2017-03-11|
-|darkvapeur|$8|2015-05-21||fred26|$50|2017-04-08|
-|fearless|$5|2015-05-24||gatesbillou|$20|2017-04-15|
-|0x90|$10|2015-05-31||David-Reguera-Garcia-Dreg|$10|2017-04-24|
-|acidflash|$50|2015-06-03||Adir|$20|2017-05-03|
-|VackerSimon|$10|2015-06-14||ferbeb|$10|2017-05-17|
-|Artic|$10|2015-06-29||(unknown)|$16|2017-06-04|
-|[crystalidea](https://www.crystalidea.com/uninstall-tool)|$24|2015-07-10||androsa|$20|2017-06-11|
-|jl2id|$10|2015-08-13||robersor|$25|2017-07-05|
-|[PELock](https://pelock.com)|$115|2015-08-26||DDSTrainers|$10|2017-07-15|
-|[tslater2006](https://github.com/tslater2006)|$20|2015-09-04||blaquee|$20|2017-08-27|
-|Exidous|$20|2015-09-04||SmilingWolf|$15|2017-09-26|
-|lupier|$40|2015-09-08||Alexander H.|$150|2017-10-11|
-|Stef|$10|2015-09-15||gatesbillou|$25|2017-10-14|
-|[d3v1l401](https://d3vsite.org)|$5|2015-10-06||t4rmo|$5|2017-10-18|
-|Artur|$20|2015-10-24||joelcornu|$5|2017-10-27|
-|RoBa|$100|2015-11-18||Adir|$35|2017-11-02|
-|mr.tuna7331|-|2015-12-15||(unknown)|$10|2017-11-11|
-|lupier|$90|2016-01-12||xdeng|$10|2018-01-04|
-|fvrmatteo|$10|2016-01-21||v-p-b|$50|2018-03-21|
-|willi.neu9|$10|2016-01-30||EmptyBrain|$50|2018-03-30|
-|rithien|$100|2016-02-19||[mentebinaria](https://www.mentebinaria.com.br/)|$19|2018-04-12|
-|ey|$20|2016-02-26||Mauro Bollini|$50|2018-06-07|
-|clockwork|$10|2016-03-06||gatesbillou|$15|2018-06-17|
-|codespy|$5|2016-03-23||Kirbiflint|$3|2018-06-22|
-|test|$100|2016-03-28||Chisato Rokumiya|$20|2018-09-20|
-|RomanGol|$10|2016-03-28||pengchang|$100|2018-10-24|
-|fearless|$10|2016-04-24||younsunmin|$5|2018-11-18|
-|Jack|$5|2016-05-17||EmptyBrain|$50|2018-12-27|
-|willi.neu9|$30|2016-05-26||Yim|$10|2019-01-13|
-|gatesbillou|$20|2016-06-02||[OALabs](https://www.youtube.com/c/OALabs)|-|2019-01-27|
-|AGI|$155|2016-06-16||Lixinist|$10|2019-04-15|
-|lupier|$100|2016-06-24||bloodmc|$50|2019-04-29|
-|0x90|$50|2016-07-19||(unknown)|$20|2019-05-24|
-|tr4nc3|$15|2016-07-31||masacate|$10|2019-07-10|
-|MikeGuidry|$2500|2016-07-31||User Manuals|$5|2020-01-20|
-|Alexander H.|$150|2016-09-09||Jim Conyngham|$50|2020-03-23|
-|darkvapeur|$10|2016-10-04||Danya|$5|2020-06-08|
-|h907308901|$5|2016-10-06||RooT|$160|2020-07-22|
-|Adir|$20|2016-10-24||jadakiss9018|$2|2020-09-11|
-|NicoG|$100|2016-10-27||samsonpianofingers|$15|2020-09-14|
-|Angie|$150|2016-11-03||tpericin|$1337|2020-10-09|
-|hulucc|$20|2016-12-02||nikkej|$100|2020-10-22|
-|napcode|$10|2016-12-05||kha1ifaa|$10|2021-01-04|
-|TechLord|-|2016-12-26||rikaardhosein|$20|2021-09-08|
-|ayylmao5|$5|2017-01-01||Lukas21|$50|2021-09-15|
-|affelwafro|$10|2017-01-03||Flavio Nardiello|$30|2021-12-01|
-|FS|$40|2017-01-15||stevemk14ebr|$1000|2021-12-03|
-|EmptyBrain|$50|2017-01-27||[ethical.blue](https://ethical.blue)|$19|2022-05-14|
-
-_To all our early supporters: thank you for believing in this project before it became what it is today!_
+x64dbg est développé par mrexodia et ses contributeurs ([liste](https://github.com/x64dbg/x64dbg/graphs/contributors)) ; voir le [README officiel](README.x64dbg.md) pour les crédits complets. Ce fork n'est ni affilié ni approuvé par l'équipe d'x64dbg ; pour les versions officielles, rendez-vous sur <https://x64dbg.com>.
