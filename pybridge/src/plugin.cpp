@@ -66,10 +66,13 @@ namespace
         return {};  // caller falls back to a bare "emulate_dump.py" on PATH
     }
 
-    // Prefers the "py" launcher (handles --3), falls back to python/python3 in PATH
+    // Prefers python.exe over the py.exe launcher: when launched with STARTF_USESTDHANDLES,
+    // py.exe does not reliably propagate inherited stdout/stderr to the python.exe child it
+    // spawns, so our log file stays empty on a crash. Direct python.exe writes straight to
+    // our file. py.exe is kept only as a last-resort fallback.
     std::string FindPythonLauncher()
     {
-        static const char* const names[] = { "py.exe", "python.exe", "python3.exe" };
+        static const char* const names[] = { "python.exe", "python3.exe", "py.exe" };
         for(const char* name : names)
         {
             char full[MAX_PATH] = "";
@@ -194,57 +197,112 @@ namespace
         std::string thread = argc > 3 ? argv[3] : "0";
         bool keepGoing = argc > 4 && (argv[4][0] == '1' || argv[4][0] == 'y' || argv[4][0] == 'Y');
 
-        // "py" takes "-3"; "python"/"python3" do not
+        // "py" takes "-3"; "python"/"python3" do not. "-u" forces unbuffered stdout/stderr
+        // so a crash traceback reaches the log file before the process dies (otherwise
+        // Python block-buffers stderr when it is a file, hiding the real error).
         bool isLauncher = _stricmp(PathFindFileNameA(python.c_str()), "py.exe") == 0;
-        std::string cmd = "\"" + python + "\"" + (isLauncher ? " -3" : "") +
+        std::string cmd = "\"" + python + "\"" + (isLauncher ? " -3" : "") + " -u" +
                           " \"" + script + "\" --serve --port " + port +
                           " --thread " + thread + (keepGoing ? " --keep-going" : "") +
                           " \"" + argv[1] + "\"";
 
         _plugin_logprintf("[" PLUGIN_NAME "] launching: %s\n", cmd.c_str());
 
+        // Redirect the child's stdout/stderr to a log file next to the dump,
+        // so we can show the real Python traceback when the emulator crashes.
+        // (CREATE_NEW_CONSOLE was used before; its window disappeared with the
+        // process on crash, leaving no diagnostic for the user.)
+        char tempDir[MAX_PATH] = "";
+        GetTempPathA(MAX_PATH, tempDir);
+        char logPath[MAX_PATH] = "";
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        sprintf_s(logPath, "%spybridge-emu-%04u%02u%02u-%02u%02u%02u.log",
+                  tempDir, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+        SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };  // inheritable
+        HANDLE hLog = CreateFileA(logPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                  &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if(hLog == INVALID_HANDLE_VALUE)
+        {
+            _plugin_logprintf("[" PLUGIN_NAME "] cannot create log file %s (error %lu); "
+                              "falling back to a detached console\n", logPath, GetLastError());
+        }
+
         STARTUPINFOA si = { sizeof(si) };
+        if(hLog != INVALID_HANDLE_VALUE)
+        {
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = hLog;
+            si.hStdError = hLog;
+            si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        }
         PROCESS_INFORMATION pi = {};
         std::string mutableCmd = cmd;  // CreateProcessA may modify the command line buffer
         // Run the emulator in the script's own folder so its sibling imports resolve
         std::string scriptDir = script;
         PathRemoveFileSpecA(&scriptDir[0]);
         scriptDir.resize(strlen(scriptDir.c_str()));
-        if(!CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, FALSE,
-                           CREATE_NEW_CONSOLE, nullptr, scriptDir.c_str(), &si, &pi))
+        DWORD flags = (hLog != INVALID_HANDLE_VALUE) ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE;
+        BOOL inheritHandles = (hLog != INVALID_HANDLE_VALUE) ? TRUE : FALSE;
+        if(!CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, inheritHandles,
+                           flags, nullptr, scriptDir.c_str(), &si, &pi))
         {
             _plugin_logprintf("[" PLUGIN_NAME "] CreateProcess failed (error %lu)\n", GetLastError());
+            if(hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
             return false;
         }
         CloseHandle(pi.hThread);
+        // Close our handle so only the child holds it; this does not close the file.
+        if(hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
 
-        // Give the emulator a moment to parse the dump and bind the port. We wait up to 5s;
-        // if the process dies first (e.g. missing Unicorn, bad dump) we report that instead.
+        if(hLog != INVALID_HANDLE_VALUE)
+            _plugin_logprintf("[" PLUGIN_NAME "] subprocess log: %s\n", logPath);
+
+        // Give the emulator a moment to parse the dump and bind the port. We wait up to 15s;
+        // whichever stops the wait first wins:
+        //   - port starts listening -> success
+        //   - process exits before listening -> report the log path
+        // (We used to try to tail the log here, but reading a file whose write-handle is
+        // inherited by the subprocess returns 0 bytes on NTFS until the subprocess is fully
+        // reaped; the user opens the log file themselves instead, which is reliable.)
         bool listening = false;
-        for(int i = 0; i < 50 && !listening; i++)
+        bool processExited = false;
+        for(int i = 0; i < 150 && !listening && !processExited; i++)
         {
             Sleep(100);
-            DWORD exitCode = 0;
-            if(GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
+            if(WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
             {
-                _plugin_logprintf("[" PLUGIN_NAME "] emulator exited early with code %lu "
-                                  "(check its console; often: missing 'unicorn' pip package or unreadable dump)\n", exitCode);
-                CloseHandle(pi.hProcess);
-                return false;
+                DWORD exitCode = 0;
+                GetExitCodeProcess(pi.hProcess, &exitCode);
+                _plugin_logprintf("[" PLUGIN_NAME "] emulator exited early with code %lu\n", exitCode);
+                processExited = true;
+                break;
             }
             listening = PortIsListening(portNumber);
         }
         CloseHandle(pi.hProcess);
+
+        if(processExited)
+        {
+            _plugin_logprintf("[" PLUGIN_NAME "] Open the subprocess log to see the real error: %s\n", logPath);
+            _plugin_logputs("[" PLUGIN_NAME "] Common causes: 'unicorn' pip package missing "
+                            "(install with: python -m pip install unicorn), dump path unreadable, "
+                            "Python version mismatch.");
+            return false;
+        }
         if(!listening)
         {
-            _plugin_logprintf("[" PLUGIN_NAME "] emulator started but 127.0.0.1:%s is not listening yet; "
-                              "the dump may be large or the script is still parsing.\n", port.c_str());
+            _plugin_logprintf("[" PLUGIN_NAME "] 127.0.0.1:%s is not listening after 15s. The subprocess may\n"
+                              "[" PLUGIN_NAME "] still be parsing a large dump, or it crashed silently.\n"
+                              "[" PLUGIN_NAME "] Open the subprocess log: %s\n", port.c_str(), logPath);
+            return true;  // keep the subprocess running; the user can wait longer and retry
         }
-        else
-        {
-            _plugin_logprintf("[" PLUGIN_NAME "] emulating %s on 127.0.0.1:%s "
-                              "(connect with Debugger(port=%s))\n", argv[1], port.c_str(), port.c_str());
-        }
+        _plugin_logprintf("[" PLUGIN_NAME "] emulating %s on 127.0.0.1:%s\n", argv[1], port.c_str());
+        _plugin_logprintf("[" PLUGIN_NAME "] NOTE: x64dbg itself stays inactive. The .dmp is not a running\n"
+                          "[" PLUGIN_NAME "]       process, it is replayed by Python. Drive it with:\n"
+                          "[" PLUGIN_NAME "]         py -3 -c \"from x64dbg_bridge import Debugger as D; d=D(port=%s); print(d.regs()); d.step_into()\"\n",
+                          port.c_str());
         return true;
     }
 
