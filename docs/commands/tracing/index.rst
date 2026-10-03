@@ -19,3 +19,4 @@ Tracing
    TraceSetLogFile
    StartRunTrace
    StopRunTrace
+   TraceExport

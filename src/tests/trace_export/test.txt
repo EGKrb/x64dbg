@@ -1,0 +1,22 @@
+settingset Events, TlsCallbacks, 0
+settingset Events, TlsCallbacksSystem, 0
+settingset Events, EntryBreakpoint, 1
+init tests/trace_export.exe
+run
+testassert $pid != 0, "stopped at entry"
+
+StartTraceRecording "tests/trace_export/trace.trace64"
+TraceIntoConditional 0, .200
+StopTraceRecording
+
+TraceExport "tests/trace_export/trace.trace64", "tests/trace_export/trace.json"
+testassert $result > .100, "json export contains the recorded instructions"
+var jsoncount, $result
+
+TraceExport "tests/trace_export/trace.trace64", "tests/trace_export/trace.csv"
+testassert $result == jsoncount, "csv and json exports have the same instruction count"
+
+TraceExport "tests/trace_export/trace.trace64", "tests/trace_export/trace.txt", csv
+testassert $result == jsoncount, "explicit format argument"
+
+run

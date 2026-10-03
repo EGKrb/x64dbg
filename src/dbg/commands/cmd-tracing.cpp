@@ -7,6 +7,7 @@
 #include "value.h"
 #include "variable.h"
 #include "TraceRecord.h"
+#include "TraceExport.h"
 
 extern std::vector<std::pair<duint, duint>> RunToUserCodeBreakpoints;
 
@@ -241,4 +242,36 @@ bool cbDebugStartTraceRecording(int argc, char* argv[])
 bool cbDebugStopTraceRecording(int argc, char* argv[])
 {
     return TraceRecord.enableTraceRecording(false, nullptr);
+}
+
+bool cbDebugTraceExport(int argc, char* argv[])
+{
+    if(IsArgumentsLessThan(argc, 3))
+        return false;
+    TraceExportFormat format = TraceExportFormat::Json;
+    String formatName = StringUtils::ToLower(argc > 3 ? argv[3] : "");
+    if(formatName.empty())
+    {
+        if(StringUtils::EndsWith(StringUtils::ToLower(argv[2]), ".csv"))
+            format = TraceExportFormat::Csv;
+    }
+    else if(formatName == "csv")
+        format = TraceExportFormat::Csv;
+    else if(formatName != "json")
+    {
+        dprintf(QT_TRANSLATE_NOOP("DBG", "Unknown export format \"%s\", use \"json\" or \"csv\"\n"), argv[3]);
+        return false;
+    }
+
+    TraceExportResult result;
+    if(!TraceExportFile(argv[1], argv[2], format, result))
+    {
+        dprintf(QT_TRANSLATE_NOOP("DBG", "Trace export failed: %s\n"), result.error.c_str());
+        return false;
+    }
+    if(result.truncated)
+        dputs(QT_TRANSLATE_NOOP("DBG", "The last trace block is incomplete and was skipped (is the trace still being recorded?)"));
+    varset("$result", result.count, false);
+    dprintf(QT_TRANSLATE_NOOP("DBG", "Exported %llu instructions to %s\n"), (unsigned long long)result.count, argv[2]);
+    return true;
 }

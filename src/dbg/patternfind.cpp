@@ -3,7 +3,8 @@
 #include <algorithm>
 #include <memory>
 
-using namespace std;
+using std::string;
+using std::vector;
 
 static inline bool isHex(char ch)
 {

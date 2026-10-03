@@ -272,6 +272,7 @@ static void registercommands()
     dbgcmdnew("TraceSetStepFilter,SetTraceStepFilter", cbDebugTraceSetStepFilter, true); //Set trace step filter (none/user/system)
     dbgcmdnew("StartTraceRecording,StartRunTrace,opentrace", cbDebugStartTraceRecording, true); //start run trace (Ollyscript command "opentrace" "opens run trace window")
     dbgcmdnew("StopTraceRecording,StopRunTrace,tc", cbDebugStopTraceRecording, true); //stop run trace (and Ollyscript command)
+    dbgcmdnew("TraceExport", cbDebugTraceExport, false); //export a trace file to JSON or CSV
 
     //thread control
     dbgcmdnew("createthread,threadcreate,newthread,threadnew", cbDebugCreatethread, true); //create thread
