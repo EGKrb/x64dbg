@@ -1,7 +1,9 @@
 #include "server.h"
 #include "_plugins.h"
 
+#include <windows.h>
 #include <cstdlib>
+#include <string>
 
 #define PLUGIN_NAME "pybridge"
 #define PLUGIN_VERSION 1
@@ -54,6 +56,48 @@ namespace
         return true;
     }
 
+    // pybridge.emu "C:\path\crash.dmp"[, port[, thread[, keepgoing]]]
+    // Launches emulate_dump.py --serve in a new console so the dump can be driven like a
+    // live target through x64dbg_bridge.Debugger(port=...). The script path comes from the
+    // X64DBG_EMU_SCRIPT environment variable, or defaults to emulate_dump.py on the PATH.
+    bool CbEmu(int argc, char* argv[])
+    {
+        if(argc < 2)
+        {
+            _plugin_logputs("[" PLUGIN_NAME "] usage: pybridge.emu \"dump.dmp\"[, port[, thread[, keepgoing]]]");
+            return false;
+        }
+
+        char scriptBuf[MAX_PATH] = "";
+        size_t length = 0;
+        getenv_s(&length, scriptBuf, "X64DBG_EMU_SCRIPT");
+        std::string script = length > 0 ? scriptBuf : "emulate_dump.py";
+
+        std::string port = argc > 2 ? argv[2] : "27041";
+        std::string thread = argc > 3 ? argv[3] : "0";
+        bool keepGoing = argc > 4 && (argv[4][0] == '1' || argv[4][0] == 'y' || argv[4][0] == 'Y');
+
+        std::string cmd = "py -3 \"" + script + "\" --serve --port " + port +
+                          " --thread " + thread + (keepGoing ? " --keep-going" : "") +
+                          " \"" + argv[1] + "\"";
+
+        STARTUPINFOA si = { sizeof(si) };
+        PROCESS_INFORMATION pi = {};
+        std::string mutableCmd = cmd;  // CreateProcessA may modify the command line buffer
+        if(!CreateProcessA(nullptr, mutableCmd.data(), nullptr, nullptr, FALSE,
+                           CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi))
+        {
+            _plugin_logprintf("[" PLUGIN_NAME "] cannot start emulator (error %lu): %s\n",
+                              GetLastError(), cmd.c_str());
+            return false;
+        }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        _plugin_logprintf("[" PLUGIN_NAME "] emulating %s on 127.0.0.1:%s "
+                          "(connect with Debugger(port=%s))\n", argv[1], port.c_str(), port.c_str());
+        return true;
+    }
+
     bool CbStatus(int, char*[])
     {
         if(gServer.IsRunning())
@@ -74,6 +118,7 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct)
     _plugin_registercommand(gPluginHandle, "pybridge.start", CbStart, false);
     _plugin_registercommand(gPluginHandle, "pybridge.stop", CbStop, false);
     _plugin_registercommand(gPluginHandle, "pybridge.status", CbStatus, false);
+    _plugin_registercommand(gPluginHandle, "pybridge.emu", CbEmu, false);
 
     // Start automatically when launched by the Python client (x64dbg_bridge.launch)
     char portText[16] = "";

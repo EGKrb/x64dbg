@@ -1,4 +1,4 @@
-# pybridge
+# x64dbg-pybridge
 
 Piloter x64dbg (interface graphique ou `headless.exe`) depuis Python, plus des modèles de scripts prêts à l'emploi pour `headless.exe`.
 
@@ -38,16 +38,16 @@ Copy-Item build-x32\pybridge.dp32 "$x64dbg\x32\plugins\"
 Le serveur démarre :
 
 - automatiquement si la variable d'environnement `X64DBG_PYBRIDGE_PORT` est définie (c'est ce que fait `Debugger.launch()`) ;
-- sinon avec la commande `pybridge.start [port]` dans x64dbg (port décimal, 27041 par défaut). Aussi : `pybridge.stop`, `pybridge.status`.
+- sinon avec la commande `pybridge.start [port]` dans x64dbg (port décimal, 27041 par défaut). Aussi : `pybridge.stop`, `pybridge.status`, `pybridge.emu` (voir « Émuler un dump »).
 
 ## Utilisation depuis Python
 
 ```python
 import sys
-sys.path.insert(0, r"C:\chemin\vers\x64dbg\pybridge\python")
+sys.path.insert(0, r"C:\Users\Elio\Downloads\x64dbg-pybridge\python")
 from x64dbg_bridge import Debugger
 
-X64DBG = r"C:\chemin\vers\x64dbg\bin"   # dossier qui contient x64 et x32
+X64DBG = r"C:\Users\Elio\AppData\Local\Microsoft\WinGet\Packages\x64dbg.x64dbg_Microsoft.Winget.Source_8wekyb3d8bbwe\release"
 
 with Debugger.launch(X64DBG) as dbg:          # démarre headless.exe ; gui=True pour x64dbg.exe
     dbg.init(r"C:\Windows\System32\whoami.exe")
@@ -73,7 +73,7 @@ Les adresses et valeurs acceptent un entier ou une **expression x64dbg** : `"ker
 | Traces | `trace(record_file, condition, max_steps, step_over)`, `export_trace(trace, output, fmt)` |
 | Commandes | `cmd("texte brut")`, `command(name, *args)` (échappement automatique), `eval(expr)`, `result` (`$result`) |
 
-`export_trace()` utilise la commande `TraceExport`, qui n'existe que dans le x64dbg de ce dépôt (pas dans les versions officielles).
+`export_trace()` utilise la commande `TraceExport`, qui n'existe que dans un x64dbg compilé avec cet ajout (dépôt `x64dbg-git`, branche `feature/trace-export`).
 
 ## Exemples
 
@@ -85,12 +85,32 @@ Dans `examples/` (option `--x64dbg <dossier release>` ou variable `X64DBG_DIR` p
 | `trace_to_json.py cible.exe --steps 20000 --out dossier` | enregistre une trace depuis le point d'entrée, l'exporte en JSON/CSV et affiche des statistiques |
 | `dump_memory.py --target cible.exe --addr "mod.base(cible.exe)" --size "mod.size(cible.exe)" --out m.bin` | sauvegarde une zone mémoire (ou `--pid` pour s'attacher) |
 | `step_log.py cible.exe --count 50` | exécute pas à pas et affiche les registres modifiés par chaque instruction |
+| `emulate_dump.py crash.dmp --count 200` | **émule** un dump mémoire (pas à pas, trace JSON/CSV, serveur pybridge) — voir ci-dessous |
+
+## Émuler un dump (.dmp)
+
+Un `.dmp` est une **photo figée** de la mémoire : il ne s'exécute pas, il n'a pas de CPU ni de noyau derrière lui. `examples/emulate_dump.py` charge la mémoire capturée et les registres du thread dans l'émulateur **Unicorn** et déroule le code à partir de là. Le parsing du minidump est en bibliothèque standard ; l'émulation demande `pip install unicorn` (et `capstone` en option, pour le désassemblage).
+
+```powershell
+py emulate_dump.py crash.dmp --list-threads            # threads + leur rip
+py emulate_dump.py crash.dmp --thread 0 --count 200    # pas à pas émulé
+py emulate_dump.py crash.dmp --from "rsp+8"            # démarrer ailleurs (expr sur les registres)
+py emulate_dump.py crash.dmp --count 5000 --keep-going --trace t.json --trace-csv t.csv
+py emulate_dump.py crash.dmp --serve --port 27041      # piloter via x64dbg_bridge.Debugger
+```
+
+- **Mode fidèle (défaut)** : s'arrête au **bord du snapshot** — la première page lue que le dump n'a pas capturée, ou le premier appel système. Ce bord est physique. Sur un minidump classique (pile + quelques modules) on l'atteint en quelques instructions ; sur un *full dump* on va très loin.
+- **`--keep-going`** : retire cet arrêt en best-effort — pages manquantes mappées à zéro, `syscall`/`int`/`sysenter` sautés, instructions qu'Unicorn ne décode pas sautées. **Dès le premier octet manquant, la trace devient spéculative** (« ce que ferait le CPU si l'absent valait zéro »), pas la vérité du process. Signalé en sortie et par `"skipped": true` dans la trace.
+- **`--trace t.json`** : trace émulée en JSON (en-tête + instruction, registres modifiés, accès mémoire). **`--trace-csv t.csv`** : mêmes colonnes que la commande `TraceExport` (`index,thread,address,module,bytes,disasm,<registres>,memory`), donc exploitable avec les mêmes outils.
+- **`--serve`** : expose l'émulateur sur le **même protocole que le plugin**, si bien que le client `x64dbg_bridge.Debugger(port=...)` pilote le dump comme une cible vivante (`step_into`, `regs`, `read`, `disasm`...), dans les limites du snapshot.
+
+Depuis x64dbg même, la commande `pybridge.emu "crash.dmp"[, port[, thread[, keepgoing]]]` lance `--serve` dans une console (plugin recompilé requis ; chemin du script via `X64DBG_EMU_SCRIPT`).
 
 ## Modèles pour headless.exe
 
 ```powershell
 .\headless\run-headless.ps1 -Template api-log -Target C:\Windows\System32\whoami.exe
-.\headless\run-headless.ps1 -Template trace-export -Target .\programme.exe -X64dbgDir C:\chemin\vers\x64dbg\bin
+.\headless\run-headless.ps1 -Template trace-export -Target .\programme.exe -X64dbgDir C:\Users\Elio\Downloads\x64dbg-git\bin
 ```
 
 Le lanceur remplace `%TARGET%`, `%MODULE%`, `%OUT%` et `%BITS%` dans le modèle, lance `headless.exe -cf` avec un dossier de configuration isolé (les `settingset` du modèle ne modifient pas votre configuration d'x64dbg) et écrit tout dans `out\<modèle>-<date>\` (`script.txt`, `headless.log`, fichiers produits). Un modèle se termine par `log "[template] done"`.
@@ -101,6 +121,7 @@ Le lanceur remplace `%TARGET%`, `%MODULE%`, `%OUT%` et `%BITS%` dans le modèle,
 | `trace-export` | trace 50 000 instructions depuis le point d'entrée et exporte en JSON/CSV (nécessite `TraceExport`) |
 | `dump-module` | sauvegarde le module principal (`.mem`) et un minidump complet au point d'entrée |
 | `break-on-file` | breakpoint conditionnel (chemin contenant `.txt`) puis actions automatiques : log, sauvegarde de la pile, minidump |
+| `emulate-dump` | `-Target` est un `.dmp` : lance `pybridge.emu` et sert l'émulation sur 127.0.0.1:27041 (plugin recompilé requis) |
 
 Les modèles utilisent `arg.get(n)` pour lire les arguments : ils fonctionnent en x64 et en x32 (`-Arch x32`).
 
@@ -114,4 +135,4 @@ Une requête JSON par ligne, une réponse JSON par ligne :
 ← {"id": 2, "error": "cannot read memory"}
 ```
 
-Méthodes : `ping`, `cmd`, `eval`, `state`, `wait`, `run`, `pause`, `step_into`, `step_over`, `step_out`, `stop`, `regs`, `reg_get`, `reg_set`, `mem_read`, `mem_write`, `mem_valid`, `disasm` (voir `src/api.cpp`). Les adresses et registres sont renvoyés en chaînes hexadécimales (`"0x7FF6..."`).
+Méthodes : `ping`, `cmd`, `eval`, `state`, `wait`, `run`, `pause`, `step_into`, `step_over`, `step_out`, `regs`, `reg_get`, `reg_set`, `mem_read`, `mem_write`, `mem_valid`, `disasm` (voir `src/api.cpp`). Les adresses et registres sont renvoyés en chaînes hexadécimales (`"0x7FF6..."`).

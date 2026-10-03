@@ -1,0 +1,13 @@
+// Emulates a memory dump (.dmp) instead of debugging a live process.
+// %TARGET% is the .dmp file here, not an executable.
+//
+// Needs the pybridge plugin rebuilt with the pybridge.emu command, and emulate_dump.py
+// reachable (set X64DBG_EMU_SCRIPT to its full path, or run from the examples folder).
+// pybridge.emu launches emulate_dump.py --serve in a new console: the dump is then driven
+// like a live target through x64dbg_bridge.Debugger(port=27041). See examples/emulate_dump.py.
+//
+// Arguments: pybridge.emu "dump", port, thread, keepgoing(1/0)
+
+pybridge.emu "%TARGET%", 27041, 0, 1
+log "[template] emulation server on 127.0.0.1:27041 -- connect with Debugger(port=27041)"
+log "[template] done"
