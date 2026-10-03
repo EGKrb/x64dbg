@@ -1,0 +1,37 @@
+// Logs Windows API calls made by the target, without ever pausing it.
+// The log lines start with [api] (console and %OUT%\headless.log).
+// arg.get(n) reads the n-th argument for both x64 and x32 calling conventions.
+// Breakpoints are on kernelbase: modern programs call it directly, kernel32 only forwards to it.
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+bp kernelbase.CreateFileW
+bpcond kernelbase.CreateFileW, 0
+bplog kernelbase.CreateFileW, "[api] CreateFileW({utf16@arg.get(0)}) from {a:[csp]}"
+
+bp kernelbase.DeleteFileW
+bpcond kernelbase.DeleteFileW, 0
+bplog kernelbase.DeleteFileW, "[api] DeleteFileW({utf16@arg.get(0)}) from {a:[csp]}"
+
+bp kernelbase.CreateProcessW
+bpcond kernelbase.CreateProcessW, 0
+bplog kernelbase.CreateProcessW, "[api] CreateProcessW({utf16@arg.get(0)}, {utf16@arg.get(1)}) from {a:[csp]}"
+
+bp kernelbase.LoadLibraryExW
+bpcond kernelbase.LoadLibraryExW, 0
+bplog kernelbase.LoadLibraryExW, "[api] LoadLibraryExW({utf16@arg.get(0)}) from {a:[csp]}"
+
+bp kernelbase.VirtualProtect
+bpcond kernelbase.VirtualProtect, 0
+bplog kernelbase.VirtualProtect, "[api] VirtualProtect({p:arg.get(0)}, size={x:arg.get(1)}, protect={x:arg.get(2)}) from {a:[csp]}"
+
+bp kernelbase.WriteProcessMemory
+bpcond kernelbase.WriteProcessMemory, 0
+bplog kernelbase.WriteProcessMemory, "[api] WriteProcessMemory(addr={p:arg.get(1)}, size={x:arg.get(3)}) from {a:[csp]}"
+
+// erun passes exceptions to the program; the script continues when the process exits
+erun
+log "[template] done"

@@ -1,0 +1,28 @@
+// Conditional breakpoint with automatic actions:
+// pauses only when the target opens a path containing ".txt" (strstr is case-sensitive),
+// then logs the call, saves the stack and writes a minidump.
+// The hit counter of every CreateFileW call is logged without pausing.
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+bp kernelbase.CreateFileW
+bpcond kernelbase.CreateFileW, "strstr(utf16(arg.get(0)), \".txt\")"
+bplog kernelbase.CreateFileW, "[template] CreateFileW #{d:$breakpointcounter}: {utf16@arg.get(0)}"
+
+erun
+// The script continues here when the breakpoint pauses the target, or when the target exits ($pid = 0)
+cmp $pid, 0
+je nomatch
+
+log "[template] matched: {utf16@arg.get(0)} access={x:arg.get(1)} from {a:[csp]}"
+savedata "%OUT%\stack.bin", csp, 400
+minidump "%OUT%\at_createfile.dmp"
+log "[template] done"
+ret
+
+nomatch:
+log "[template] the target exited without opening a matching file"
+log "[template] done"

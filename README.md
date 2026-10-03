@@ -1,3 +1,51 @@
+# x64dbg — fork EGKrb
+
+> **Fork non officiel** de [x64dbg/x64dbg](https://github.com/x64dbg/x64dbg) (branche `development`). Il ajoute l'export des traces en JSON/CSV et le pilotage d'x64dbg depuis Python. Pour la version officielle, voir le dépôt d'origine ; le README officiel est reproduit plus bas.
+
+## Ce qui est ajouté
+
+| Ajout | Où | Description |
+|---|---|---|
+| Commande `TraceExport` | [`src/dbg/TraceExport.cpp`](src/dbg/TraceExport.cpp), [doc](docs/commands/tracing/TraceExport.md) | Convertit une trace `.trace64`/`.trace32` en JSON ou CSV : adresse, octets, désassemblage, registres et accès mémoire de chaque instruction. Fonctionne sans session de débogage, donc aussi dans `headless.exe`. |
+| Plugin `pybridge` | [`pybridge/`](pybridge/README.md) | Serveur local (127.0.0.1) dans x64dbg + client Python sans dépendance : breakpoints, exécution pas à pas, registres, mémoire, désassemblage, traces. |
+| Modèles headless | [`pybridge/headless/`](pybridge/headless) | Lanceur PowerShell et scripts prêts à l'emploi : journal d'appels d'API, trace + export, dump mémoire, breakpoint conditionnel avec actions automatiques. |
+| Correctif | [`src/dbg/patternfind.cpp`](src/dbg/patternfind.cpp) | Supprime un `using namespace std` qui cassait la compilation en *unity build* (`std::byte` contre `byte` de Windows). |
+
+La branche [`feature/trace-export`](https://github.com/EGKrb/x64dbg/tree/feature/trace-export) ne contient que `TraceExport`, séparément du reste.
+
+### Exemple
+
+```
+StartTraceRecording "C:\traces\cible.trace64"
+TraceIntoConditional 0, .10000
+StopTraceRecording
+TraceExport "C:\traces\cible.trace64", "C:\traces\cible.json"
+TraceExport "C:\traces\cible.trace64", "C:\traces\cible.csv"
+```
+
+```python
+from x64dbg_bridge import Debugger
+
+with Debugger.launch(r"C:\chemin\vers\x64dbg\bin") as dbg:
+    dbg.init(r"C:\Windows\System32\whoami.exe")
+    dbg.set_breakpoint("kernelbase.CreateFileW", break_=False, log="CreateFileW({utf16@arg.get(0)})")
+    dbg.run()
+```
+
+### Compiler
+
+```bat
+git clone --recursive https://github.com/EGKrb/x64dbg
+cd x64dbg
+"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+cmake -B build64 -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build64
+```
+
+Les exécutables sont dans `bin\x64` (`vcvars32.bat` et un autre dossier de build pour `bin\x32`). Le plugin se compile à part, voir [`pybridge/README.md`](pybridge/README.md). Tests : `py src/tests/run.py --arch x64` (dont `trace_export`).
+
+---
+
 # x64dbg
 
 <img width="100" src="https://github.com/x64dbg/x64dbg/raw/development/src/bug_black.png"/>

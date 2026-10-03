@@ -1,0 +1,14 @@
+// Dumps the main module memory and a full minidump of the process at its entry point.
+// To dump later in the execution, add a breakpoint before the dump, e.g.:
+//   bp kernelbase.VirtualProtect
+//   run
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+log "[template] {modname@cip} base={p:mod.base(cip)} size={x:mod.size(cip)}"
+savedata "%OUT%\%MODULE%.mem", mod.base(cip), mod.size(cip)
+minidump "%OUT%\process.dmp"
+log "[template] done"

@@ -1,0 +1,17 @@
+// Records an execution trace from the entry point and exports it to JSON and CSV.
+// Needs an x64dbg build with the TraceExport command.
+// Change the stop condition (0 = never) and the maximum count (.N = decimal) as needed,
+// for example: TraceIntoConditional "cip == kernelbase.ExitProcess", .1000000
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+StartTraceRecording "%OUT%\trace.trace%BITS%"
+TraceIntoConditional 0, .50000
+StopTraceRecording
+
+TraceExport "%OUT%\trace.trace%BITS%", "%OUT%\trace.json"
+TraceExport "%OUT%\trace.trace%BITS%", "%OUT%\trace.csv"
+log "[template] done"
