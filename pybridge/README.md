@@ -70,6 +70,8 @@ Les adresses et valeurs acceptent un entier ou une **expression x64dbg** : `"ker
 | Registres | `regs()`, `reg(name)`, `set_reg(name, value)` |
 | Mémoire | `read(addr, size)`, `write(addr, data)`, `read_ptr(addr)`, `read_string(addr, wide)`, `is_valid(addr)`, `disasm(addr, count)` |
 | Breakpoints | `set_breakpoint(addr, condition, log, command, break_, singleshot)`, `delete_breakpoint(addr)`, `set_hardware_breakpoint(addr, kind, size)` |
+| Hook d'API | `hook_api(api, log, condition, command, break_)` (log sans pause par défaut), `dump_memory(addr, size, path)` |
+| Anti-anti-debug | `hide_debugger()` (patche le PEB du processus débogué), `scyllahide_profiles(ini)`, `scyllahide_set_profile(ini, name)` |
 | Traces | `trace(record_file, condition, max_steps, step_over)`, `export_trace(trace, output, fmt)` |
 | Commandes | `cmd("texte brut")`, `command(name, *args)` (échappement automatique), `eval(expr)`, `result` (`$result`) |
 
@@ -85,6 +87,7 @@ Dans `examples/` (option `--x64dbg <dossier release>` ou variable `X64DBG_DIR` p
 | `trace_to_json.py cible.exe --steps 20000 --out dossier` | enregistre une trace depuis le point d'entrée, l'exporte en JSON/CSV et affiche des statistiques |
 | `dump_memory.py --target cible.exe --addr "mod.base(cible.exe)" --size "mod.size(cible.exe)" --out m.bin` | sauvegarde une zone mémoire (ou `--pid` pour s'attacher) |
 | `step_log.py cible.exe --count 50` | exécute pas à pas et affiche les registres modifiés par chaque instruction |
+| `antidebug.py cible.exe [--scyllahide-ini ...]` | masque le débogueur (PEB) et journalise les sondes anti-debug sans les bloquer |
 | `emulate_dump.py crash.dmp --count 200` | **émule** un dump mémoire (pas à pas, trace JSON/CSV, serveur pybridge) — voir ci-dessous |
 
 ## Émuler un dump (.dmp)
@@ -121,9 +124,28 @@ Le lanceur remplace `%TARGET%`, `%MODULE%`, `%OUT%` et `%BITS%` dans le modèle,
 | `trace-export` | trace 50 000 instructions depuis le point d'entrée et exporte en JSON/CSV (nécessite `TraceExport`) |
 | `dump-module` | sauvegarde le module principal (`.mem`) et un minidump complet au point d'entrée |
 | `break-on-file` | breakpoint conditionnel (chemin contenant `.txt`) puis actions automatiques : log, sauvegarde de la pile, minidump |
+| `antidebug` | lance la cible avec `hide` (PEB patché : `BeingDebugged`, `NtGlobalFlag`, heap flags) et journalise les sondes anti-debug |
 | `emulate-dump` | `-Target` est un `.dmp` : lance `pybridge.emu` et sert l'émulation sur 127.0.0.1:27041 (plugin recompilé requis) |
 
 Les modèles utilisent `arg.get(n)` pour lire les arguments : ils fonctionnent en x64 et en x32 (`-Arch x32`).
+
+## Anti-anti-debug
+
+Deux niveaux, utilisables ensemble :
+
+- **`dbg.hide_debugger()`** (ou commande `hide` dans un script) — masque natif intégré au fork. Patche le PEB du processus débogué dès que vous avez la main : `BeingDebugged = 0`, bits debug (`0x70`) de `NtGlobalFlag` nettoyés, flags de la *process heap* normalisés. Couvre x64 et WoW64. Idempotent, à appeler après `init()` / `attach()` et avant le premier `run()`. Suffit pour les sondes basiques (`IsDebuggerPresent`, `CheckRemoteDebuggerPresent`, lecture directe du PEB).
+
+- **ScyllaHide** — plugin tiers nécessaire pour les sondes plus avancées (`NtQueryInformationProcess`, `NtSetInformationThread`, timing, exceptions...). Déposez ses fichiers (depuis la release ScyllaHide) dans `<x64dbg>\x64\plugins\` et `<x64dbg>\x32\plugins\`, puis sélectionnez le profil adapté à la cible :
+
+    ```python
+    ini = r"C:\...\x64dbg\x64\plugins\scylla_hide.ini"
+    print(Debugger.scyllahide_profiles(ini))          # ['VMProtect x86/x64', 'Themida x86/x64', ...]
+    Debugger.scyllahide_set_profile(ini, "Basic")     # avant de lancer x64dbg
+    ```
+
+  Le profil est lu par le plugin au démarrage du processus débogué, donc `scyllahide_set_profile` doit être appelé **avant** `init()` / `attach()`. `Basic` suffit pour la majorité des cas ; les profils packer-spécifiques (VMProtect, Themida, Obsidium, Armadillo) activent en plus les contournements propres à ces protections.
+
+Ces fonctionnalités servent à l'analyse de binaires que vous êtes autorisé à étudier (vos propres programmes, échantillons de malware dans un bac à sable, challenges CTF, etc.). Elles n'affectent que le processus débogué par cette instance d'x64dbg.
 
 ## Protocole (pour d'autres langages)
 

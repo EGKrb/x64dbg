@@ -375,6 +375,104 @@ class Debugger:
         """kind: "x" (execute), "w" (write) or "r" (read/write)."""
         self.command("bphws", Expr(_command_value(address)), Expr(kind), Expr(str(size)))
 
+    # ----------------------------------------------------------------- anti-anti-debug
+
+    def hide_debugger(self) -> None:
+        """Patch the debuggee's PEB to hide the debugger (x64dbg built-in `hide` command).
+
+        Clears `PEB.BeingDebugged`, `PEB.NtGlobalFlag` debug bits (0x70) and the
+        process heap debug flags. Covers x64 and WoW64. Call it after `init()` /
+        `attach()` and before the first `run()`. Idempotent.
+        """
+        self.cmd("hide")
+
+    @staticmethod
+    def scyllahide_profiles(ini_path: str | os.PathLike) -> list[str]:
+        """Return the profile names available in a `scylla_hide.ini`."""
+        profiles = []
+        with open(ini_path, "r", encoding="utf-8-sig", errors="replace") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if line.startswith("[") and line.endswith("]"):
+                    name = line[1:-1]
+                    if name != "SETTINGS":
+                        profiles.append(name)
+        return profiles
+
+    @staticmethod
+    def scyllahide_set_profile(ini_path: str | os.PathLike, profile: str) -> None:
+        """Set `CurrentProfile=<profile>` in a `scylla_hide.ini` (writes the file in place).
+
+        The ScyllaHide plugin reads this value when the next debuggee is launched,
+        so change the profile *before* calling `init()` / `attach()`. The INI lives
+        next to the ScyllaHide plugin, e.g. `<x64dbg>\\x64\\plugins\\scylla_hide.ini`.
+        """
+        path = Path(ini_path)
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        if profile not in Debugger.scyllahide_profiles(path):
+            raise BridgeError(f"profile {profile!r} not found in {path} "
+                              f"(available: {Debugger.scyllahide_profiles(path)})")
+        lines = text.splitlines()
+        section = None
+        replaced = False
+        for i, raw in enumerate(lines):
+            stripped = raw.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                section = stripped[1:-1]
+                continue
+            if section == "SETTINGS" and stripped.lower().startswith("currentprofile"):
+                lines[i] = f"CurrentProfile={profile}"
+                replaced = True
+                break
+        if not replaced:
+            # No [SETTINGS] block or no CurrentProfile line: prepend it
+            lines = ["[SETTINGS]", f"CurrentProfile={profile}", ""] + lines
+        # ScyllaHide expects CRLF; write bytes directly so Windows text mode
+        # does not translate \n into \r\n (which would turn \r\n into \r\r\n).
+        path.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+
+    # ----------------------------------------------------------------- API hooking
+
+    def hook_api(
+        self,
+        api: str,
+        log: str | None = None,
+        condition: str | None = None,
+        command: str | None = None,
+        break_: bool = False,
+    ) -> None:
+        """Breakpoint on an API with log + optional action, without pausing by default.
+
+        A convenience wrapper around `set_breakpoint`: `break_=False` (the default)
+        turns it into a logging/counting hook, so the target keeps running at full speed
+        while every call is recorded. Use `log` to format arguments with x64dbg's
+        formatting syntax, e.g.:
+
+            dbg.hook_api("kernelbase.VirtualProtect",
+                         log="VirtualProtect({p:arg.get(0)}, size={x:arg.get(1)}, "
+                             "protect={x:arg.get(2)}) from {a:[csp]}")
+
+        `condition` filters which calls fire the log/command (x64dbg expression,
+        e.g. `strstr(utf16(arg.get(0)), \".txt\")`). `command` runs an x64dbg
+        script fragment on each hit (e.g. `savedata ".\\stack.bin", csp, 400`).
+        `break_=True` makes it a real pausing breakpoint.
+        """
+        self.set_breakpoint(
+            api,
+            condition=condition,
+            log=log,
+            command=command,
+            break_=break_,
+        )
+
+    # ----------------------------------------------------------------- memory dumping
+
+    def dump_memory(self, address: int | str, size: int, path: str | os.PathLike) -> int:
+        """Save `size` bytes from `address` to a binary file. Returns the bytes written."""
+        data = self.read(address, size)
+        Path(path).write_bytes(data)
+        return len(data)
+
     # ----------------------------------------------------------------- tracing
 
     def trace(self, record_file: str | os.PathLike | None = None, condition: str = "0", max_steps: int = 50000, step_over: bool = False) -> int:
