@@ -93,8 +93,11 @@ Remove-Item -Force $zip, $symbols, (Join-Path $OutDir 'SHA256SUMS.txt') -ErrorAc
 Compress-Archive -CompressionLevel Optimal -Path (Join-Path $package 'release'), (Join-Path $package 'pluginsdk'), (Join-Path $package 'commithash.txt') -DestinationPath $zip
 Compress-Archive -CompressionLevel Optimal -Path (Join-Path $package 'pdb'), (Join-Path $package 'commithash.txt') -DestinationPath $symbols
 
+$sums = ''
 foreach ($file in $zip, $symbols) {
     $hash = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
-    "{0}  {1}" -f $hash, (Split-Path -Leaf $file) | Add-Content -Encoding ascii (Join-Path $OutDir 'SHA256SUMS.txt')
+    $sums += "{0}  {1}`n" -f $hash, (Split-Path -Leaf $file)
     "{0,-45} {1,8:N1} MB  sha256 {2}" -f (Split-Path -Leaf $file), ((Get-Item $file).Length / 1MB), $hash
 }
+# LF line endings so that `sha256sum -c SHA256SUMS.txt` works
+[IO.File]::WriteAllText((Join-Path $OutDir 'SHA256SUMS.txt'), $sums, (New-Object Text.ASCIIEncoding))
