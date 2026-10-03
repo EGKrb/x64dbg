@@ -7,6 +7,7 @@
 - **`TraceExport`** : conversion des traces d'exécution en **JSON** ou **CSV** lisibles par n'importe quel outil ;
 - **pybridge** : pilotage complet d'x64dbg **depuis Python** (breakpoints, pas à pas, registres, mémoire, traces) ;
 - des **modèles de scripts** prêts à l'emploi pour **`headless.exe`** (x64dbg sans interface) ;
+- un **visualiseur de dumps mémoire** (`.dmp`) et des commandes pratiques : **`.init`** (exécutable ou dump), **`.save`**, **`scylla_hide.enable` / `.disable` / `.status`** ;
 - les plugins **ScyllaHide** et **xAnalyzer** inclus dans la release, **OllyDumpEx** installable en une commande.
 
 **[⬇ Télécharger la dernière release](https://github.com/EGKrb/x64dbg/releases/latest)** · [README officiel d'x64dbg](README.x64dbg.md) · [Documentation officielle](https://help.x64dbg.com)
@@ -21,10 +22,11 @@
 4. [TraceExport : exporter les traces](#traceexport--exporter-les-traces)
 5. [pybridge : piloter x64dbg depuis Python](#pybridge--piloter-x64dbg-depuis-python)
 6. [Modèles pour headless.exe](#modèles-pour-headlessexe)
-7. [Plugins inclus](#plugins-inclus)
-8. [Compiler soi-même](#compiler-soi-même)
-9. [Organisation du dépôt](#organisation-du-dépôt)
-10. [Licences et crédits](#licences-et-crédits)
+7. [Commandes ajoutées et dumps mémoire](#commandes-ajoutées-et-dumps-mémoire)
+8. [Plugins inclus](#plugins-inclus)
+9. [Compiler soi-même](#compiler-soi-même)
+10. [Organisation du dépôt](#organisation-du-dépôt)
+11. [Licences et crédits](#licences-et-crédits)
 
 ---
 
@@ -45,6 +47,7 @@ Contenu de l'archive :
 release\
   x96dbg.exe                 lanceur
   x64\  x32\                 débogueur 64 / 32 bits, headless.exe, plugins\
+  x64\minidump.exe           visualiseur de dumps mémoire (.dmp)
   translations\              interface traduite (dont le français : Options > Langue)
   themes\                    thème sombre
   pybridge\                  client Python, exemples, modèles headless
@@ -66,7 +69,9 @@ Un second fichier, `x64dbg-egkrb_<version>_symbols.zip`, contient les symboles d
 | Code de base | releases publiées (ex. 2026.05.27) | branche `development` récente (fonctionnalités et correctifs pas encore publiés officiellement) |
 | Export des traces | binaire `.trace64` lisible uniquement par x64dbg ; export CSV possible seulement dans l'interface | commande `TraceExport` → JSON ou CSV, aussi en script et dans `headless.exe` |
 | Automatisation | langage de script x64dbg, SDK C/C++ | + client Python (pybridge) + modèles headless avec lanceur |
-| Plugins | aucun | ScyllaHide et xAnalyzer inclus, pybridge inclus, OllyDumpEx via `install-plugins.ps1` |
+| Dumps mémoire (`.dmp`) | création seulement (`minidump`) | + visualiseur de dumps (`minidump.exe`), ouvert par `.init fichier.dmp` |
+| Commandes | — | `.init`, `.save`, `scylla_hide.enable` / `.disable` / `.status` (plugin ExtraCmds) |
+| Plugins | aucun | ScyllaHide et xAnalyzer inclus, pybridge et ExtraCmds inclus, OllyDumpEx via `install-plugins.ps1` |
 | Compilation | — | correctif d'un `using namespace std` qui cassait le *unity build* (`patternfind.cpp`) |
 
 Le cœur du débogueur n'est pas modifié : tout ce qui fonctionne dans x64dbg officiel fonctionne ici à l'identique. Une branche [`feature/trace-export`](https://github.com/EGKrb/x64dbg/tree/feature/trace-export) ne contient que `TraceExport`, isolé du reste.
@@ -316,6 +321,38 @@ Format des textes de log : `{x:rax}` hexadécimal, `{d:...}` décimal, `{p:...}`
 
 ---
 
+## Commandes ajoutées et dumps mémoire
+
+Le plugin **ExtraCmds** ([`extracmds/`](extracmds/src/extracmds.cpp)) ajoute ces commandes, utilisables dans la barre de commande, les scripts, `headless.exe` et pybridge :
+
+| Commande | Effet |
+|---|---|
+| `.init fichier.exe[, arguments[, dossier]]` | lance et débogue le programme (identique à `init`) |
+| `.init fichier.dmp` | ouvre le dump dans le **visualiseur de dumps** (voir ci-dessous) |
+| `.save` | sauvegarde la base de données du programme (commentaires, labels, breakpoints) — comme `dbsave` |
+| `.save fichier.dmp` | écrit un minidump complet du processus — comme `minidump` |
+| `.save fichier.dd64` | sauvegarde la base de données dans ce fichier — comme `dbsave fichier` |
+| `.save fichier, adresse` | sauvegarde la zone mémoire qui contient l'adresse (`mem.base` / `mem.size`) |
+| `.save fichier, adresse, taille` | sauvegarde une plage mémoire — comme `savedata` (taille en hexadécimal : `100` = 256 octets, `.256` en décimal) |
+| `scylla_hide.status` | affiche si ScyllaHide est actif, son profil et les profils disponibles |
+| `scylla_hide.enable [profil]` | active ScyllaHide : profil donné (nom exact ou début du nom, ex. `vmprotect`, `basic`), sinon le dernier profil actif, sinon « Basic » |
+| `scylla_hide.disable` | désactive ScyllaHide (profil « Disabled ») |
+
+```
+scylla_hide.enable basic
+.init "C:\cible.exe"
+.save "C:\out\cible.dmp"
+.save "C:\out\pile.bin", rsp
+.init "C:\out\cible.dmp"
+```
+
+Fonctionnement :
+
+- **ScyllaHide** ne lit sa configuration qu'au chargement. `scylla_hide.enable/disable` modifie `plugins\scylla_hide.ini` (`CurrentProfile`) puis recharge le plugin (`plugunload` + `plugload`) : le profil s'applique immédiatement, sans redémarrer x64dbg. Les protections sont injectées **au démarrage ou à l'attachement** du programme : si un programme est déjà en cours de débogage, relancez-le pour qu'il prenne le nouveau profil.
+- **Un dump n'est pas un processus** : x64dbg débogue des programmes en cours d'exécution et ne peut pas « charger » un `.dmp` (pas d'exécution, de pas à pas ni de breakpoints sur un dump). `.init fichier.dmp` ouvre donc le **visualiseur de dumps** `x64\minidump.exe`, issu du code officiel d'x64dbg (`src/cross/minidump`) : carte mémoire, désassemblage, vue hexadécimale, threads et registres. Il lit les dumps de processus 32 et 64 bits et peut aussi être lancé seul (`minidump.exe fichier.dmp`). Pour analyser un dump avec des commandes et des scripts, utilisez WinDbg (`cdb -z fichier.dmp`).
+
+---
+
 ## Plugins inclus
 
 | Plugin | Version | Rôle | Utilisation |
@@ -324,6 +361,7 @@ Format des textes de log : `{x:rax}` hexadécimal, `{d:...}` décimal, `{p:...}`
 | **xAnalyzer** | 2.5.12 | analyse statique : reconnaît les appels d'API et commente leurs arguments dans le désassemblage, détecte boucles et fonctions | menu *Plugins > xAnalyzer* ou clic droit dans le désassemblage, ou commandes `xanal selection` / `xanal function` / `xanal module` (`xanalremove ...` pour effacer) ; définitions d'API dans `plugins\apis_def\` |
 | **OllyDumpEx** | v1.86 | dump d'un processus en fichier PE exécutable (pour les programmes compressés/protégés), en complément de Scylla intégré | menu *Plugins > OllyDumpEx* |
 | **pybridge** | 1 | pilotage depuis Python | voir [pybridge](#pybridge--piloter-x64dbg-depuis-python) |
+| **ExtraCmds** | 1 | commandes `.init`, `.save`, `scylla_hide.*` | voir [Commandes ajoutées](#commandes-ajoutées-et-dumps-mémoire) |
 
 OllyDumpEx est un logiciel gratuit à code fermé **sans licence de redistribution** : il n'est donc pas inclus dans la release. [`install-plugins.ps1`](plugins/install-plugins.ps1) le télécharge depuis le site de son auteur.
 
@@ -359,13 +397,21 @@ cmake --build build32
 Les exécutables sont produits dans `bin\x64` et `bin\x32` (Qt et les dépendances sont copiés automatiquement).
 
 ```bat
-:: Plugin pybridge (même terminal que l'architecture voulue)
+:: Plugins pybridge et ExtraCmds (même terminal que l'architecture voulue ; build-x32 en 32 bits)
 cd pybridge
+cmake -B build-x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DX64DBG_SDK=<dossier pluginsdk>
+cmake --build build-x64
+cd ..\extracmds
 cmake -B build-x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DX64DBG_SDK=<dossier pluginsdk>
 cmake --build build-x64
 ```
 
-Par défaut, pybridge utilise le `pluginsdk` d'un x64dbg installé avec winget ; sinon, indiquez celui d'une release (`-DX64DBG_SDK=...\pluginsdk`).
+Par défaut, les plugins utilisent le `pluginsdk` d'un x64dbg installé avec winget ; sinon, indiquez celui d'une release (`-DX64DBG_SDK=...\pluginsdk`).
+
+```powershell
+# Visualiseur de dumps (terminal « x64 Native Tools », après la compilation 64 bits dont il réutilise Qt)
+.\tools\build-minidump-viewer.ps1                    # produit build-cross-x64\minidump.exe, à copier dans bin\x64
+```
 
 ```powershell
 .\plugins\install-plugins.ps1                       # plugins tiers dans bin\x32 et bin\x64
@@ -398,11 +444,13 @@ pybridge/
   python/x64dbg_bridge.py            client Python
   examples/                          exemples Python
   headless/                          lanceur et modèles headless
+extracmds/src/extracmds.cpp          plugin ExtraCmds (.init, .save, scylla_hide.*)
 plugins/
   install-plugins.ps1                installeur des plugins tiers
   THIRD-PARTY.md                     versions, licences, empreintes
 tools/
   make-release.ps1                   construction des archives de release
+  build-minidump-viewer.ps1          compilation du visualiseur de dumps (src/cross/minidump)
   LISEZMOI.md                        démarrage rapide inclus dans l'archive
 README.x64dbg.md                     README officiel d'x64dbg
 ```
@@ -415,5 +463,6 @@ README.x64dbg.md                     README officiel d'x64dbg
 - **ScyllaHide** : GPL-3.0 — <https://github.com/x64dbg/ScyllaHide> (source de la v1.4 : tag `v1.4`).
 - **xAnalyzer** : MIT — <https://github.com/ThunderCls/xAnalyzer>, par ThunderCls.
 - **OllyDumpEx** : freeware de Low Priority — <https://low-priority.appspot.com/ollydumpex/>, non redistribué.
+- **Visualiseur de dumps** : code d'x64dbg (GPL-3.0) ; bibliothèques [udmp-parser](https://github.com/0vercl0k/udmp-parser) (MIT), [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), [linux-pe](https://github.com/can1357/linux-pe) (BSD), [nlohmann/json](https://github.com/nlohmann/json) (MIT), Qt 5.12 (LGPL-3.0, DLL partagées avec x64dbg).
 
 x64dbg est développé par mrexodia et ses contributeurs ([liste](https://github.com/x64dbg/x64dbg/graphs/contributors)) ; voir le [README officiel](README.x64dbg.md) pour les crédits complets. Ce fork n'est ni affilié ni approuvé par l'équipe d'x64dbg ; pour les versions officielles, rendez-vous sur <https://x64dbg.com>.

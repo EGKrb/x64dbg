@@ -18,6 +18,7 @@ Le dossier doit être dans un emplacement où vous avez le droit d'écrire (pas 
 | ScyllaHide | masque le débogueur aux protections anti-debug (menu Plugins > ScyllaHide > Options). Le profil actif par défaut est « VMProtect x86/x64 » ; choisissez « Basic » pour un programme non protégé si celui-ci se comporte mal |
 | xAnalyzer | analyse automatique : arguments des appels d'API commentés dans le désassemblage (définitions dans `plugins\apis_def`) |
 | pybridge | pilotage depuis Python (`pybridge\README.md`) |
+| ExtraCmds | commandes `.init`, `.save`, `scylla_hide.enable` / `.disable` / `.status` |
 
 **OllyDumpEx** (dump de processus en PE) n'a pas de licence de redistribution : installez-le avec
 
@@ -33,6 +34,19 @@ powershell -ExecutionPolicy Bypass -File .\install-plugins.ps1 -Plugins OllyDump
   ```
 - `pybridge\python\x64dbg_bridge.py` : client Python (breakpoints, pas à pas, registres, mémoire, traces).
 - `pybridge\headless\run-headless.ps1` : modèles de scripts prêts à l'emploi (journal d'API, trace + export, dump, breakpoint conditionnel).
+
+- Commandes ajoutées (plugin ExtraCmds) :
+  ```
+  .init "C:\cible.exe"            débogue le programme (comme init)
+  .init "C:\dumps\cible.dmp"      ouvre le dump dans le visualiseur x64\minidump.exe
+  .save                           sauvegarde commentaires, labels, breakpoints
+  .save "C:\out\cible.dmp"        minidump complet du processus
+  .save "C:\out\zone.bin", rsp    zone mémoire contenant l'adresse
+  scylla_hide.status              profil ScyllaHide actif
+  scylla_hide.enable basic        active ScyllaHide avec ce profil
+  scylla_hide.disable             désactive ScyllaHide
+  ```
+  Un dump n'est pas un processus : il s'ouvre dans le visualiseur (mémoire, désassemblage, hexadécimal, threads, registres), pas dans le débogueur.
 
 Documentation complète : <https://github.com/EGKrb/x64dbg#readme>
 Licences : dossier `licenses\` (x64dbg et ScyllaHide : GPL-3.0, xAnalyzer : MIT).

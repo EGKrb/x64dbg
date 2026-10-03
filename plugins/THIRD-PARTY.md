@@ -10,6 +10,17 @@ Ces plugins ne sont pas développés dans ce dépôt. `install-plugins.ps1` les 
 
 Les textes des licences sont dans le dossier `licenses/` de la release.
 
+## Bibliothèques du visualiseur de dumps (`x64\minidump.exe`)
+
+Compilées dans le visualiseur par `tools/build-minidump-viewer.ps1` (versions de `src/cross/vendor/cmake.toml`) :
+
+| Bibliothèque | Version | Licence |
+|---|---|---|
+| [udmp-parser](https://github.com/0vercl0k/udmp-parser) | `2fff7ac` | MIT |
+| [cpp-httplib](https://github.com/yhirose/cpp-httplib) | v0.25.0 | MIT |
+| [linux-pe](https://github.com/can1357/linux-pe) | `1fcb057` | BSD-2-Clause |
+| [nlohmann/json](https://github.com/nlohmann/json) | v3.12.0 | MIT |
+
 ## Empreintes SHA-256 des fichiers téléchargés
 
 | Fichier | SHA-256 |

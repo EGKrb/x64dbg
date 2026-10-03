@@ -6,6 +6,8 @@ Builds the release archives of this fork from an existing build.
 Prerequisites (see README.md, "Compiler"):
   - bin\x64 and bin\x32 built (cmake --build build64 / build32)
   - pybridge\build-x64\pybridge.dp64 and pybridge\build-x32\pybridge.dp32 built
+  - extracmds\build-x64\ExtraCmds.dp64 and extracmds\build-x32\ExtraCmds.dp32 built
+  - build-cross-x64\minidump.exe built (tools\build-minidump-viewer.ps1)
 
 Steps:
   1. downloads the x64dbg translations (like the official CI)
@@ -36,7 +38,9 @@ function Invoke-Download([string] $Url, [string] $File) {
 # 0. Checks
 $required = @(
     'bin\x64\x64dbg.exe', 'bin\x64\headless.exe', 'bin\x32\x32dbg.exe', 'bin\x32\headless.exe', 'bin\x96dbg.exe',
-    'pybridge\build-x64\pybridge.dp64', 'pybridge\build-x32\pybridge.dp32'
+    'pybridge\build-x64\pybridge.dp64', 'pybridge\build-x32\pybridge.dp32',
+    'extracmds\build-x64\ExtraCmds.dp64', 'extracmds\build-x32\ExtraCmds.dp32',
+    'build-cross-x64\minidump.exe'
 )
 foreach ($file in $required) {
     if (-not (Test-Path (Join-Path $root $file))) { throw "missing $file, build it first" }
@@ -62,6 +66,10 @@ $main = Join-Path $package 'release'
 & (Join-Path $root 'plugins\install-plugins.ps1') -X64dbgDir $main -Plugins ScyllaHide, xAnalyzer -Force
 Copy-Item (Join-Path $root 'pybridge\build-x64\pybridge.dp64') (Join-Path $main 'x64\plugins')
 Copy-Item (Join-Path $root 'pybridge\build-x32\pybridge.dp32') (Join-Path $main 'x32\plugins')
+Copy-Item (Join-Path $root 'extracmds\build-x64\ExtraCmds.dp64') (Join-Path $main 'x64\plugins')
+Copy-Item (Join-Path $root 'extracmds\build-x32\ExtraCmds.dp32') (Join-Path $main 'x32\plugins')
+# Minidump viewer (tools\build-minidump-viewer.ps1): uses the Qt DLLs of x64dbg in x64\
+Copy-Item (Join-Path $root 'build-cross-x64\minidump.exe') (Join-Path $main 'x64')
 Copy-Item (Join-Path $root 'plugins\install-plugins.ps1') $main
 
 # 4. pybridge client, examples, templates
@@ -79,6 +87,11 @@ Copy-Item (Join-Path $root 'LICENSE') (Join-Path $licenses 'x64dbg-LICENSE.txt')
 Invoke-Download 'https://raw.githubusercontent.com/x64dbg/ScyllaHide/master/LICENSE' (Join-Path $licenses 'ScyllaHide-LICENSE.txt')
 Invoke-Download 'https://raw.githubusercontent.com/ThunderCls/xAnalyzer/master/LICENSE' (Join-Path $licenses 'xAnalyzer-LICENSE.txt')
 Copy-Item (Join-Path $root 'plugins\THIRD-PARTY.md') $licenses
+# Libraries linked into minidump.exe
+$viewerLicenses = @{ 'json' = 'LICENSE.MIT'; 'cpp-httplib' = 'LICENSE'; 'linux-pe' = 'LICENSE.md'; 'udmp-parser' = 'LICENSE' }
+foreach ($name in $viewerLicenses.Keys) {
+    Copy-Item (Join-Path $root "build-cross-deps\$name\$($viewerLicenses[$name])") (Join-Path $licenses "minidump-viewer_$name-LICENSE.txt")
+}
 
 # Quick start inside the archive
 $readme = Get-Content -Raw (Join-Path $root 'tools\LISEZMOI.md')
