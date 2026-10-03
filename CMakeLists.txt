@@ -120,6 +120,10 @@ target_compile_definitions(bridge PRIVATE
 	BUILD_BRIDGE
 )
 
+target_compile_features(bridge PUBLIC
+	cxx_std_17
+)
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 4) # x86
 	set_target_properties(bridge PROPERTIES
 		OUTPUT_NAME
@@ -151,6 +155,10 @@ add_library(btparser STATIC)
 target_sources(btparser PRIVATE ${btparser_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${btparser_SOURCES})
 
+target_compile_features(btparser PUBLIC
+	cxx_std_17
+)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "Clang") # clang-any
 	target_compile_options(btparser PUBLIC
 		-Wno-self-assign-field
@@ -167,6 +175,8 @@ set(dbg_SOURCES
 	"src/dbg/DeviceNameResolver/DeviceNameResolver.h"
 	"src/dbg/GetPeArch.h"
 	"src/dbg/TitanEngine/TitanEngine.h"
+	"src/dbg/TraceExport.cpp"
+	"src/dbg/TraceExport.h"
 	"src/dbg/TraceRecord.cpp"
 	"src/dbg/TraceRecord.h"
 	"src/dbg/WinInet-Downloader/downslib.cpp"
@@ -439,6 +449,10 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${dbg_SOURCES})
 target_compile_definitions(dbg PRIVATE
 	BUILD_DBG
 	NOMINMAX
+)
+
+target_compile_features(dbg PUBLIC
+	cxx_std_17
 )
 
 target_include_directories(dbg PRIVATE
@@ -875,6 +889,10 @@ target_compile_definitions(gui PRIVATE
 	X64DBG
 )
 
+target_compile_features(gui PUBLIC
+	cxx_std_17
+)
+
 target_include_directories(gui PRIVATE
 	src
 	"src/gui/Src"
@@ -983,6 +1001,10 @@ add_executable(exe)
 target_sources(exe PRIVATE ${exe_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${exe_SOURCES})
 
+target_compile_features(exe PRIVATE
+	cxx_std_17
+)
+
 if(NOT TARGET bridge)
 	message(FATAL_ERROR "Target \"bridge\" referenced by \"exe\" does not exist!")
 endif()
@@ -1069,6 +1091,10 @@ add_executable(loaddll)
 target_sources(loaddll PRIVATE ${loaddll_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${loaddll_SOURCES})
 
+target_compile_features(loaddll PRIVATE
+	cxx_std_17
+)
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 4) # x86
 	target_link_libraries(loaddll PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/dbg/ntdll/ntdll_x86.lib"
@@ -1120,6 +1146,10 @@ add_executable(headless)
 target_sources(headless PRIVATE ${headless_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${headless_SOURCES})
 
+target_compile_features(headless PRIVATE
+	cxx_std_17
+)
+
 if(NOT TARGET bridge)
 	message(FATAL_ERROR "Target \"bridge\" referenced by \"headless\" does not exist!")
 endif()
@@ -1157,6 +1187,10 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4) # x86
 
 	target_sources(launcher PRIVATE ${launcher_SOURCES})
 	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${launcher_SOURCES})
+
+	target_compile_features(launcher PRIVATE
+		cxx_std_17
+	)
 
 	target_link_libraries(launcher PRIVATE
 		Shlwapi
