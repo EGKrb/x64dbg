@@ -45,7 +45,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Version = '2026.10.03.7'
 $Tag     = "v$Version"
-$Branch  = 'feature/titanhide-pesieve'
+$Branch  = 'feature/unpack-templates'
 $root    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $dist    = Join-Path $root 'dist'
 
