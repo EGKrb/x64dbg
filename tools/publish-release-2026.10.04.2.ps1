@@ -136,8 +136,10 @@ Run { & (Join-Path $root 'tools\make-release.ps1') -Version $Version } "5. make-
 $zip     = Join-Path $dist "x64dbg-egkrb_$Version.zip"
 $symbols = Join-Path $dist "x64dbg-egkrb_${Version}_symbols.zip"
 $sums    = Join-Path $dist 'SHA256SUMS.txt'
-foreach ($file in $zip, $symbols, $sums) {
-    if (-not (Test-Path $file)) { throw "missing output: $file" }
+if (-not $DryRun) {
+    foreach ($file in $zip, $symbols, $sums) {
+        if (-not (Test-Path $file)) { throw "missing output: $file" }
+    }
 }
 
 # -------------------------------------------------------------------- 6. GitHub release
