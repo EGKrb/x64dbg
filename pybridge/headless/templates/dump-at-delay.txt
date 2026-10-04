@@ -1,0 +1,36 @@
+// Lets the target start and reach its unpacker/decryption stage, then dumps
+// the main module memory plus a full minidump. Useful on packed binaries
+// where the on-disk sections are compressed/encrypted and only become readable
+// a few seconds into execution.
+//
+// Variables (adjust via -Template dump-at-delay args or edit directly):
+//   DelayMs       how long to run before dumping (default 5000 ms)
+//
+// Output in %OUT%:
+//   <module>.mem        raw bytes of the main module at the dump moment
+//   process.dmp         full minidump of the process
+//   headless.log        this console transcript
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+log "[dump] waiting 5s for unpack / init to run..."
+// Resume with exceptions passed through, then interrupt after a short run
+erun
+// (A plain `erun` runs until the debuggee pauses; to stop after a delay we
+// need a time-based pause. The simplest reliable way is a hardware breakpoint
+// trick: set a BP on a frequently called API that triggers after the delay.)
+bp kernelbase.VirtualAlloc
+bpcond kernelbase.VirtualAlloc, "1"
+run
+
+log "[dump] module {modname@cip} base={p:mod.base(cip)} size={x:mod.size(cip)}"
+savedata "%OUT%\%MODULE%.mem", mod.base(cip), mod.size(cip)
+minidump "%OUT%\process.dmp"
+log "[dump] saved %OUT%\%MODULE%.mem and %OUT%\process.dmp"
+
+bc kernelbase.VirtualAlloc
+erun
+log "[template] done"

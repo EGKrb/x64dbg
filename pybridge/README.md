@@ -88,6 +88,9 @@ Dans `examples/` (option `--x64dbg <dossier release>` ou variable `X64DBG_DIR` p
 | `dump_memory.py --target cible.exe --addr "mod.base(cible.exe)" --size "mod.size(cible.exe)" --out m.bin` | sauvegarde une zone mémoire (ou `--pid` pour s'attacher) |
 | `step_log.py cible.exe --count 50` | exécute pas à pas et affiche les registres modifiés par chaque instruction |
 | `antidebug.py cible.exe [--scyllahide-ini ...]` | masque le débogueur (PEB) et journalise les sondes anti-debug sans les bloquer |
+| `pe_entropy.py cible.exe [--threshold 7.5]` | analyse l'entropie des sections PE du processus en cours, dump celles au-dessus du seuil |
+| `memory_diff.py cible.exe --addr ... --size ... --delay 10` | snapshot avant/après d'une plage mémoire, liste les régions modifiées (utile sur packers / décompresseurs runtime) |
+| `xor_decrypt.py cible.exe --addr ... --size ... --key ... [--brute]` | lit une zone chiffrée depuis le processus et la déchiffre XOR (clé connue ou brute-force 1 octet) |
 | `emulate_dump.py crash.dmp --count 200` | **émule** un dump mémoire (pas à pas, trace JSON/CSV, serveur pybridge) — voir ci-dessous |
 
 ## Émuler un dump (.dmp)
@@ -125,6 +128,11 @@ Le lanceur remplace `%TARGET%`, `%MODULE%`, `%OUT%` et `%BITS%` dans le modèle,
 | `dump-module` | sauvegarde le module principal (`.mem`) et un minidump complet au point d'entrée |
 | `break-on-file` | breakpoint conditionnel (chemin contenant `.txt`) puis actions automatiques : log, sauvegarde de la pile, minidump |
 | `antidebug` | lance la cible avec `hide` (PEB patché : `BeingDebugged`, `NtGlobalFlag`, heap flags) et journalise les sondes anti-debug |
+| `dump-at-delay` | laisse la cible s'exécuter puis dump le module principal + minidump (utile sur packers qui déballent au démarrage) |
+| `hook-unpack` | log sans pause les API typiques de dépaquetage runtime (`VirtualAlloc`, `VirtualProtect`, `WriteProcessMemory`, `NtMapViewOfSection`, `CryptDecrypt`, `BCryptDecrypt`) |
+| `find-pattern` | `findallmem` sur toute la carte mémoire : pattern hex avec wildcards ou littéral ASCII |
+| `run-trace` | enregistre 100 000 instructions depuis le point d'entrée, exporte en JSON et CSV via `TraceExport` |
+| `hook-apis-extended` | version élargie de `api-log` (process/thread control, loader, mémoire, I/O, registre, crypto) |
 | `emulate-dump` | `-Target` est un `.dmp` : lance `pybridge.emu` et sert l'émulation sur 127.0.0.1:27041 (plugin recompilé requis) |
 
 Les modèles utilisent `arg.get(n)` pour lire les arguments : ils fonctionnent en x64 et en x32 (`-Arch x32`).

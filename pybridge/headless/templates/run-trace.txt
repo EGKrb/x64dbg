@@ -1,0 +1,24 @@
+// Records a full execution trace from the entry point, then exports it to
+// JSON and CSV. Needs an x64dbg build with the `TraceExport` command (this
+// fork has it, see src\dbg\TraceExport.cpp).
+//
+// The default limit of 100,000 instructions is deliberately conservative;
+// bump it for deeper runs, but mind the trace file size (roughly
+// ~200 B/instruction after export).
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+log "[trace] recording up to 100,000 instructions from the entry point..."
+StartTraceRecording "%OUT%\trace.trace%BITS%"
+TraceIntoConditional 0, .100000
+StopTraceRecording
+
+log "[trace] exporting to JSON and CSV..."
+TraceExport "%OUT%\trace.trace%BITS%", "%OUT%\trace.json"
+TraceExport "%OUT%\trace.trace%BITS%", "%OUT%\trace.csv"
+
+log "[trace] done; files: %OUT%\trace.trace%BITS%, trace.json, trace.csv"
+log "[template] done"

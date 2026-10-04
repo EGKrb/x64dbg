@@ -1,0 +1,29 @@
+// Pauses at the entry point, then scans the full virtual memory map for a
+// byte pattern (or an ASCII/UTF-16 string) and logs every match. Uses the
+// built-in `findallmem` command, which walks the x64dbg memory map and
+// reports hits in $result.
+//
+// Patterns can mix hex bytes and wildcards:
+//   "48 8B 05 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8"
+//   "#4D5A#"                                (hex only, "MZ")
+//   "?ello"                                 (ASCII)
+//
+// Edit the %PATTERN% placeholder below, or pass it in via run-headless.ps1.
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+log "[find] scanning full memory map for pattern..."
+// findallmem addr, pattern[, size]
+// addr = 0 means "whole memory map"; `.` can be used to anchor on cip.
+findallmem 0, "48 8B 05 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8"
+log "[find] matches recorded in the References view; count={d:$result}"
+
+// Second pass: ASCII literal (replace the token below with what you look for)
+findallmem 0, "PAYLOAD"
+log "[find] ASCII 'PAYLOAD' matches: {d:$result}"
+
+erun
+log "[template] done"

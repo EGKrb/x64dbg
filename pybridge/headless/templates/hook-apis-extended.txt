@@ -1,0 +1,74 @@
+// Broad API logger: a superset of api-log.txt covering process/thread control,
+// module loading, memory, cryptography, and remote-thread/injection APIs.
+// Every hit is logged without pausing. Intended for behavioural analysis of
+// malware samples in a sandbox and for packer/anti-cheat/protection teardown
+// of binaries you are authorized to study.
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+// --- process / thread control ----------------------------------------------
+bp kernelbase.CreateProcessW
+bpcond kernelbase.CreateProcessW, 0
+bplog kernelbase.CreateProcessW, "[api] CreateProcessW(app={utf16@arg.get(0)}, cmd={utf16@arg.get(1)}) from {a:[csp]}"
+
+bp kernelbase.CreateRemoteThread
+bpcond kernelbase.CreateRemoteThread, 0
+bplog kernelbase.CreateRemoteThread, "[api] CreateRemoteThread(hProc={p:arg.get(0)}, start={p:arg.get(3)}, param={p:arg.get(4)}) from {a:[csp]}"
+
+bp ntdll.NtCreateThreadEx
+bpcond ntdll.NtCreateThreadEx, 0
+bplog ntdll.NtCreateThreadEx, "[api] NtCreateThreadEx(hProc={p:arg.get(3)}, start={p:arg.get(4)}, param={p:arg.get(5)}) from {a:[csp]}"
+
+// --- module loading --------------------------------------------------------
+bp kernelbase.LoadLibraryExW
+bpcond kernelbase.LoadLibraryExW, 0
+bplog kernelbase.LoadLibraryExW, "[api] LoadLibraryExW({utf16@arg.get(0)}) from {a:[csp]}"
+
+bp ntdll.LdrLoadDll
+bpcond ntdll.LdrLoadDll, 0
+bplog ntdll.LdrLoadDll, "[api] LdrLoadDll({utf16@[arg.get(2)+8]}) from {a:[csp]}"
+
+// --- memory ---------------------------------------------------------------
+bp kernelbase.VirtualAlloc
+bpcond kernelbase.VirtualAlloc, 0
+bplog kernelbase.VirtualAlloc, "[api] VirtualAlloc(size={x:arg.get(1)}, type={x:arg.get(2)}, protect={x:arg.get(3)}) from {a:[csp]}"
+
+bp kernelbase.VirtualProtect
+bpcond kernelbase.VirtualProtect, 0
+bplog kernelbase.VirtualProtect, "[api] VirtualProtect(addr={p:arg.get(0)}, size={x:arg.get(1)}, new={x:arg.get(2)}) from {a:[csp]}"
+
+bp kernelbase.WriteProcessMemory
+bpcond kernelbase.WriteProcessMemory, 0
+bplog kernelbase.WriteProcessMemory, "[api] WriteProcessMemory(dst={p:arg.get(1)}, size={x:arg.get(3)}) from {a:[csp]}"
+
+bp kernelbase.ReadProcessMemory
+bpcond kernelbase.ReadProcessMemory, 0
+bplog kernelbase.ReadProcessMemory, "[api] ReadProcessMemory(src={p:arg.get(1)}, size={x:arg.get(3)}) from {a:[csp]}"
+
+// --- files / registry (I/O side effects) -----------------------------------
+bp kernelbase.CreateFileW
+bpcond kernelbase.CreateFileW, 0
+bplog kernelbase.CreateFileW, "[api] CreateFileW({utf16@arg.get(0)}, access={x:arg.get(1)}) from {a:[csp]}"
+
+bp kernelbase.RegOpenKeyExW
+bpcond kernelbase.RegOpenKeyExW, 0
+bplog kernelbase.RegOpenKeyExW, "[api] RegOpenKeyExW(hKey={p:arg.get(0)}, sub={utf16@arg.get(1)}) from {a:[csp]}"
+
+// --- crypto ---------------------------------------------------------------
+bp kernelbase.CryptDecrypt
+bpcond kernelbase.CryptDecrypt, 0
+bplog kernelbase.CryptDecrypt, "[api] CryptDecrypt(hKey={p:arg.get(0)}, pbData={p:arg.get(3)}) from {a:[csp]}"
+
+bp bcrypt.BCryptDecrypt
+bpcond bcrypt.BCryptDecrypt, 0
+bplog bcrypt.BCryptDecrypt, "[api] BCryptDecrypt(pbInput={p:arg.get(1)}, cbInput={x:arg.get(2)}) from {a:[csp]}"
+
+bp bcrypt.BCryptHashData
+bpcond bcrypt.BCryptHashData, 0
+bplog bcrypt.BCryptHashData, "[api] BCryptHashData(hHash={p:arg.get(0)}, pbInput={p:arg.get(1)}, cbInput={x:arg.get(2)}) from {a:[csp]}"
+
+erun
+log "[template] done"

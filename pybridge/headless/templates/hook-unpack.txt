@@ -1,0 +1,46 @@
+// Logs every call that is typically used by packers/unpackers to materialize
+// their payload at runtime: VirtualAlloc / VirtualProtect / WriteProcessMemory /
+// CryptDecrypt / NtMapViewOfSection. No pause: the target runs at full speed
+// and the %OUT%\headless.log line counter tells where to look afterwards.
+//
+// Scope: generic packer / malware-analysis-in-sandbox / CTF binaries you are
+// authorized to analyze. Not calibrated for any specific product.
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+// --- memory allocation / permission changes --------------------------------
+bp kernelbase.VirtualAlloc
+bpcond kernelbase.VirtualAlloc, 0
+bplog kernelbase.VirtualAlloc, "[unpack] VirtualAlloc(size={x:arg.get(1)}, type={x:arg.get(2)}, protect={x:arg.get(3)}) -> ret-stub from {a:[csp]}"
+
+bp kernelbase.VirtualAllocEx
+bpcond kernelbase.VirtualAllocEx, 0
+bplog kernelbase.VirtualAllocEx, "[unpack] VirtualAllocEx(h={p:arg.get(0)}, size={x:arg.get(2)}, protect={x:arg.get(4)}) from {a:[csp]}"
+
+bp kernelbase.VirtualProtect
+bpcond kernelbase.VirtualProtect, 0
+bplog kernelbase.VirtualProtect, "[unpack] VirtualProtect(addr={p:arg.get(0)}, size={x:arg.get(1)}, new={x:arg.get(2)}) from {a:[csp]}"
+
+// --- writes into memory (payload materializing) ----------------------------
+bp kernelbase.WriteProcessMemory
+bpcond kernelbase.WriteProcessMemory, 0
+bplog kernelbase.WriteProcessMemory, "[unpack] WriteProcessMemory(dst={p:arg.get(1)}, size={x:arg.get(3)}) from {a:[csp]}"
+
+bp ntdll.NtMapViewOfSection
+bpcond ntdll.NtMapViewOfSection, 0
+bplog ntdll.NtMapViewOfSection, "[unpack] NtMapViewOfSection(sec={p:arg.get(0)}, hProc={p:arg.get(1)}) from {a:[csp]}"
+
+// --- symmetric crypto APIs (bulk decrypt in-place) -------------------------
+bp kernelbase.CryptDecrypt
+bpcond kernelbase.CryptDecrypt, 0
+bplog kernelbase.CryptDecrypt, "[unpack] CryptDecrypt(hKey={p:arg.get(0)}, pbData={p:arg.get(3)}, size={x:[arg.get(4)]}) from {a:[csp]}"
+
+bp bcrypt.BCryptDecrypt
+bpcond bcrypt.BCryptDecrypt, 0
+bplog bcrypt.BCryptDecrypt, "[unpack] BCryptDecrypt(hKey={p:arg.get(0)}, pbInput={p:arg.get(1)}, cbInput={x:arg.get(2)}) from {a:[csp]}"
+
+erun
+log "[template] done"
