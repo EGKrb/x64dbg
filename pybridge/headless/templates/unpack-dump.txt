@@ -1,0 +1,34 @@
+// Logs every VirtualProtect / VirtualProtectEx call that flips a region to a
+// PAGE_EXECUTE* protection (mask 0xF0) and dumps that region to %OUT%.
+//
+// Each hit:
+//   - appends a line "[unpack-dump] VirtualProtect(addr, size, prot) from caller"
+//     to %OUT%\headless.log (via bplog);
+//   - overwrites %OUT%\vprotect-last.bin with the current region (bpcmd + savedata).
+//
+// headless.exe can only use a static filename for savedata, so only the LAST
+// region is kept on disk. Match it against the log line to confirm which hit
+// it corresponds to. For per-hit auto-dumps use the Python example instead:
+//   py pybridge\examples\unpack_dump.py <target.exe> --out-dir %OUT%
+//
+// Scope: generic packer / malware-analysis-in-sandbox / CTF binaries you are
+// authorized to analyze.
+
+settingset Events, SystemBreakpoint, 0
+settingset Events, TlsCallbacks, 0
+settingset Events, EntryBreakpoint, 1
+init "%TARGET%"
+
+// --- VirtualProtect: pause-less logger + dump on every executable transition
+bp kernelbase.VirtualProtect
+bpcond kernelbase.VirtualProtect, (arg.get(2) & 0xF0) != 0
+bplog kernelbase.VirtualProtect, "[unpack-dump] VirtualProtect(addr={p:arg.get(0)}, size={x:arg.get(1)}, prot={x:arg.get(2)}) from {a:[csp]}"
+bpcmd kernelbase.VirtualProtect, "savedata \"%OUT%\\vprotect-last.bin\", arg.get(0), arg.get(1)"
+
+bp kernelbase.VirtualProtectEx
+bpcond kernelbase.VirtualProtectEx, (arg.get(3) & 0xF0) != 0
+bplog kernelbase.VirtualProtectEx, "[unpack-dump] VirtualProtectEx(h={p:arg.get(0)}, addr={p:arg.get(1)}, size={x:arg.get(2)}, prot={x:arg.get(3)}) from {a:[csp]}"
+bpcmd kernelbase.VirtualProtectEx, "savedata \"%OUT%\\vprotectex-last.bin\", arg.get(1), arg.get(2)"
+
+erun
+log "[template] done"

@@ -90,6 +90,7 @@ Dans `examples/` (option `--x64dbg <dossier release>` ou variable `X64DBG_DIR` p
 | `antidebug.py cible.exe [--scyllahide-ini ...]` | masque le débogueur (PEB) et journalise les sondes anti-debug sans les bloquer |
 | `pe_entropy.py cible.exe [--threshold 7.5]` | analyse l'entropie des sections PE du processus en cours, dump celles au-dessus du seuil |
 | `memory_diff.py cible.exe --addr ... --size ... --delay 10` | snapshot avant/après d'une plage mémoire, liste les régions modifiées (utile sur packers / décompresseurs runtime) |
+| `unpack_dump.py cible.exe --out-dir dumps` | dump auto de chaque région `VirtualProtect`-flipée en PAGE_EXECUTE* (noms horodatés + adresse + taille + flag) |
 | `xor_decrypt.py cible.exe --addr ... --size ... --key ... [--brute]` | lit une zone chiffrée depuis le processus et la déchiffre XOR (clé connue ou brute-force 1 octet) |
 | `emulate_dump.py crash.dmp --count 200` | **émule** un dump mémoire (pas à pas, trace JSON/CSV, serveur pybridge) — voir ci-dessous |
 
@@ -130,6 +131,7 @@ Le lanceur remplace `%TARGET%`, `%MODULE%`, `%OUT%` et `%BITS%` dans le modèle,
 | `antidebug` | lance la cible avec `hide` (PEB patché : `BeingDebugged`, `NtGlobalFlag`, heap flags) et journalise les sondes anti-debug |
 | `dump-at-delay` | laisse la cible s'exécuter puis dump le module principal + minidump (utile sur packers qui déballent au démarrage) |
 | `hook-unpack` | log sans pause les API typiques de dépaquetage runtime (`VirtualAlloc`, `VirtualProtect`, `WriteProcessMemory`, `NtMapViewOfSection`, `CryptDecrypt`, `BCryptDecrypt`) |
+| `unpack-dump` | log les `VirtualProtect`/`VirtualProtectEx` qui flipent en PAGE_EXECUTE* (mask `0xF0`) et dump la **dernière** région (`vprotect-last.bin`). Pour un dump par appel : `examples/unpack_dump.py` |
 | `find-pattern` | `findallmem` sur toute la carte mémoire : pattern hex avec wildcards ou littéral ASCII |
 | `run-trace` | enregistre 100 000 instructions depuis le point d'entrée, exporte en JSON et CSV via `TraceExport` |
 | `hook-apis-extended` | version élargie de `api-log` (process/thread control, loader, mémoire, I/O, registre, crypto) |
