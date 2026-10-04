@@ -62,8 +62,13 @@ if ($LASTEXITCODE -ne 0) { throw 'cmake\release.cmake failed' }
 $package = Join-Path $root 'release'
 $main = Join-Path $package 'release'
 
-# 3. Plugins
-& (Join-Path $root 'plugins\install-plugins.ps1') -X64dbgDir $main -Plugins ScyllaHide, xAnalyzer -Force
+# 3. Plugins + tools bundled in the release: ScyllaHide, xAnalyzer, PE-sieve.
+# Not bundled (user runs install-plugins.ps1 on their own machine):
+#   - OllyDumpEx: no redistribution license.
+#   - TitanHide:  Defender/other AVs flag the kernel driver as HackTool; shipping the archive
+#                 would break download/extraction for most users. install-plugins.ps1 can
+#                 fetch it on demand once an exclusion is set up (see README-TitanHide.md).
+& (Join-Path $root 'plugins\install-plugins.ps1') -X64dbgDir $main -Plugins ScyllaHide, xAnalyzer, 'PE-sieve' -Force
 Copy-Item (Join-Path $root 'pybridge\build-x64\pybridge.dp64') (Join-Path $main 'x64\plugins')
 Copy-Item (Join-Path $root 'pybridge\build-x32\pybridge.dp32') (Join-Path $main 'x32\plugins')
 Copy-Item (Join-Path $root 'extracmds\build-x64\ExtraCmds.dp64') (Join-Path $main 'x64\plugins')
